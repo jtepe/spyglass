@@ -59,7 +59,7 @@
           "displayName": "grp-platform-admins",
           "membershipType": "direct",
           "isAssignableToRole": true,
-          "pimMembership": "eligible"
+          "pimMembership": "assigned"
         },
         {
           "groupId": "b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0",
@@ -81,7 +81,7 @@
         },
         {
           "roleName": "Privileged Role Administrator",
-          "assignmentType": "eligible",
+          "assignmentType": "active",
           "source": "grp-platform-admins",
           "sourceGroupId": "a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0",
           "directoryScopeId": "/",

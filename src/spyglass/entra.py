@@ -35,9 +35,6 @@ from msgraph.generated.groups.item.group_item_request_builder import (
 from msgraph.generated.identity_governance.privileged_access.group.assignment_schedules.assignment_schedules_request_builder import (  # noqa: E501
     AssignmentSchedulesRequestBuilder,
 )
-from msgraph.generated.identity_governance.privileged_access.group.eligibility_schedules.eligibility_schedules_request_builder import (  # noqa: E501
-    EligibilitySchedulesRequestBuilder,
-)
 from msgraph.generated.models.app_role_assignment import AppRoleAssignment
 from msgraph.generated.models.application import Application
 from msgraph.generated.models.directory_object import DirectoryObject
@@ -46,9 +43,6 @@ from msgraph.generated.models.o_auth2_permission_grant import OAuth2PermissionGr
 from msgraph.generated.models.privileged_access_group_assignment_schedule import (
     PrivilegedAccessGroupAssignmentSchedule,
 )
-from msgraph.generated.models.privileged_access_group_eligibility_schedule import (
-    PrivilegedAccessGroupEligibilitySchedule,
-)
 from msgraph.generated.models.privileged_access_group_relationships import (
     PrivilegedAccessGroupRelationships,
 )
@@ -56,15 +50,9 @@ from msgraph.generated.models.service_principal import ServicePrincipal
 from msgraph.generated.models.unified_role_assignment_schedule import (
     UnifiedRoleAssignmentSchedule,
 )
-from msgraph.generated.models.unified_role_eligibility_schedule import (
-    UnifiedRoleEligibilitySchedule,
-)
 from msgraph.generated.models.user import User
 from msgraph.generated.role_management.directory.role_assignment_schedules.role_assignment_schedules_request_builder import (  # noqa: E501
     RoleAssignmentSchedulesRequestBuilder,
-)
-from msgraph.generated.role_management.directory.role_eligibility_schedules.role_eligibility_schedules_request_builder import (  # noqa: E501
-    RoleEligibilitySchedulesRequestBuilder,
 )
 from msgraph.generated.service_principals.item.member_of.member_of_request_builder import (  # noqa: E501
     MemberOfRequestBuilder,
@@ -130,11 +118,12 @@ GROUP_SELECT = ["id", "displayName", "isAssignableToRole"]
 RESOURCE_SELECT = ["id", "displayName", "appId", "appRoles"]
 OWNER_SELECT = ["id", "displayName"]
 
-# Both directory-role schedule kinds share the same readable shape
-# (`roleDefinition`, `directoryScopeId`, `scheduleInfo`); `scheduleInfo` lives on
-# the concrete subclasses rather than `UnifiedRoleScheduleBase`, so the collector
-# types against the union.
-type RoleSchedule = UnifiedRoleAssignmentSchedule | UnifiedRoleEligibilitySchedule
+# Service principals can only ever hold *active* directory-role assignments
+# (eligible assignments require an interactive activation an SP cannot perform),
+# so the collector reads only assignment schedules. `scheduleInfo` lives on the
+# concrete subclass rather than `UnifiedRoleScheduleBase`, so this aliases the
+# concrete type the readers expect.
+type RoleSchedule = UnifiedRoleAssignmentSchedule
 
 
 def application_record_from_graph(app: Application) -> ApplicationRecord:
@@ -198,9 +187,9 @@ def group_membership_from_graph(
     }
 
 
-type PimSchedule = (
-    PrivilegedAccessGroupAssignmentSchedule | PrivilegedAccessGroupEligibilitySchedule
-)
+# Only PIM-for-Groups *assignment* (active) schedules are read: an SP cannot
+# activate an eligible membership, so eligibility schedules never apply to it.
+type PimSchedule = PrivilegedAccessGroupAssignmentSchedule
 
 
 def _member_group_ids(schedules: list[PimSchedule]) -> set[str]:
@@ -220,46 +209,39 @@ def _member_group_ids(schedules: list[PimSchedule]) -> set[str]:
 def apply_pim_membership(
     memberships: list[GroupMembershipRecord],
     active_schedules: list[PrivilegedAccessGroupAssignmentSchedule],
-    eligible_schedules: list[PrivilegedAccessGroupEligibilitySchedule],
 ) -> list[GroupMembershipRecord]:
     """Annotate each role-assignable membership with its PIM-for-Groups status.
 
     Pure: no network. `active_schedules` are PIM-for-Groups assignment schedules
-    (standing membership → `assigned`); `eligible_schedules` are eligibility
-    schedules (must-activate membership → `eligible`); a role-assignable group in
-    neither is `none`. Only `member` access counts (see `_member_group_ids`).
+    (standing membership → `assigned`); a role-assignable group not among them is
+    `none`. Eligible (must-activate) membership is never considered: an SP cannot
+    perform the interactive activation it requires, so it can only ever hold a
+    standing membership. Only `member` access counts (see `_member_group_ids`).
     Non-role-assignable memberships are left at `None`, since PIM-for-Groups
     status is only meaningful for role-inheritance reasoning. Returns new records;
     inputs are not mutated.
     """
     active = _member_group_ids(list(active_schedules))
-    eligible = _member_group_ids(list(eligible_schedules))
     annotated: list[GroupMembershipRecord] = []
     for membership in memberships:
-        pim: Literal["assigned", "eligible", "none"] | None = None
+        pim: Literal["assigned", "none"] | None = None
         if membership["isAssignableToRole"]:
             group_id = membership["groupId"]
-            if group_id in active:
-                pim = "assigned"
-            elif group_id in eligible:
-                pim = "eligible"
-            else:
-                pim = "none"
+            pim = "assigned" if group_id in active else "none"
         annotated.append({**membership, "pimMembership": pim})
     return annotated
 
 
 def directory_role_from_schedule(
     schedule: RoleSchedule,
-    assignment_type: Literal["active", "eligible"],
     source: str,
     source_group_id: str | None,
 ) -> DirectoryRoleRecord:
-    """Map a Graph role schedule onto a Directory Role record.
+    """Map a Graph role assignment schedule onto a Directory Role record.
 
-    Pure: no network, no clock. `assignment_type` is supplied by the caller —
-    `roleAssignmentSchedules` yield `active`, `roleEligibilitySchedules` yield
-    `eligible`. `source`/`source_group_id` carry the Via-group attribution:
+    Pure: no network, no clock. `assignmentType` is always `active`: only
+    `roleAssignmentSchedules` are read, because an SP cannot hold an eligible
+    assignment. `source`/`source_group_id` carry the Via-group attribution:
     `"direct"`/`None` for a role targeting the SP itself, or the group's display
     name/id for one reached through a role-assignable group. Raw facts only.
     """
@@ -271,7 +253,7 @@ def directory_role_from_schedule(
     end = expiration.end_date_time if expiration is not None else None
     return {
         "roleName": role_name,
-        "assignmentType": assignment_type,
+        "assignmentType": "active",
         "source": source,
         "sourceGroupId": source_group_id,
         "directoryScopeId": schedule.directory_scope_id,
@@ -666,9 +648,9 @@ class EntraCollector:
                     f"Failed to collect group memberships: {describe_graph_error(exc)}"
                 )
             try:
-                active, eligible = await self.collect_pim_for_groups(record["objectId"])
+                active = await self.collect_pim_for_groups(record["objectId"])
                 record["groupMemberships"] = apply_pim_membership(
-                    record["groupMemberships"], active, eligible
+                    record["groupMemberships"], active
                 )
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
                 record["errors"].append(
@@ -759,12 +741,14 @@ class EntraCollector:
 
     async def _principal_schedules(
         self, principal_id: str
-    ) -> tuple[list[RoleSchedule], list[RoleSchedule]]:
-        """Fetch (active, eligible) directory-role schedules for one principal id.
+    ) -> list[RoleSchedule]:
+        """Fetch the active directory-role assignment schedules for one principal id.
 
         The principal may be the SP itself (direct paths) or a role-assignable group
         (via-group paths); both are filtered by `principalId` with
-        `$expand=roleDefinition` so role display names resolve in the same call.
+        `$expand=roleDefinition` so role display names resolve in the same call. Only
+        assignment (active) schedules are read — eligibility schedules are skipped
+        because an SP cannot activate an eligible role.
         """
         escaped = principal_id.replace("'", "''")
         active_config = RequestConfiguration(
@@ -773,31 +757,19 @@ class EntraCollector:
                 expand=["roleDefinition"],
             )
         )
-        eligible_config = RequestConfiguration(
-            query_parameters=RoleEligibilitySchedulesRequestBuilder.RoleEligibilitySchedulesRequestBuilderGetQueryParameters(
-                filter=f"principalId eq '{escaped}'",
-                expand=["roleDefinition"],
-            )
-        )
         directory = self._client.role_management.directory
-        active = await _page_all(directory.role_assignment_schedules, active_config)
-        eligible = await _page_all(
-            directory.role_eligibility_schedules, eligible_config
-        )
-        return active, eligible
+        return await _page_all(directory.role_assignment_schedules, active_config)
 
     async def collect_pim_for_groups(
         self, principal_id: str
-    ) -> tuple[
-        list[PrivilegedAccessGroupAssignmentSchedule],
-        list[PrivilegedAccessGroupEligibilitySchedule],
-    ]:
-        """Fetch the SP's (active, eligible) PIM-for-Groups membership schedules.
+    ) -> list[PrivilegedAccessGroupAssignmentSchedule]:
+        """Fetch the SP's active PIM-for-Groups (standing-membership) schedules.
 
-        Both endpoints return HTTP 400 without a `$filter`, so each is always issued
+        The endpoint returns HTTP 400 without a `$filter`, so it is always issued
         with a `principalId` filter; `groupId` and `accessId` are then read off the
-        results by `apply_pim_membership`. Returns standing-membership (assignment)
-        schedules and must-activate (eligibility) schedules separately.
+        results by `apply_pim_membership`. Only assignment (standing-membership)
+        schedules are read — eligibility schedules are skipped because an SP cannot
+        activate an eligible membership.
         """
         escaped = principal_id.replace("'", "''")
         active_config = RequestConfiguration(
@@ -805,22 +777,10 @@ class EntraCollector:
                 filter=f"principalId eq '{escaped}'",
             )
         )
-        eligible_config = RequestConfiguration(
-            query_parameters=EligibilitySchedulesRequestBuilder.EligibilitySchedulesRequestBuilderGetQueryParameters(
-                filter=f"principalId eq '{escaped}'",
-            )
-        )
         group = self._client.identity_governance.privileged_access.group
         active = await _page_pim_schedules(group.assignment_schedules, active_config)
-        eligible = await _page_pim_schedules(
-            group.eligibility_schedules, eligible_config
-        )
         return [
             s for s in active if isinstance(s, PrivilegedAccessGroupAssignmentSchedule)
-        ], [
-            s
-            for s in eligible
-            if isinstance(s, PrivilegedAccessGroupEligibilitySchedule)
         ]
 
     async def collect_directory_roles(
@@ -828,14 +788,15 @@ class EntraCollector:
         object_id: str,
         memberships: list[GroupMembershipRecord],
     ) -> list[DirectoryRoleRecord]:
-        """Collect Directory Roles across all four paths, with Via-group attribution.
+        """Collect active Directory Roles across both paths, with Via-group attribution.
 
-        Direct paths filter the SP's own id (`source = "direct"`). Via-group paths
-        query, for each role-assignable group the SP is a transitive member of, the
-        group's schedules and attribute every returned role to the SP with the
+        Direct path filters the SP's own id (`source = "direct"`). Via-group path
+        queries, for each role-assignable group the SP is a transitive member of, the
+        group's schedules and attributes every returned role to the SP with the
         group's display name as `source` and its id as `sourceGroupId` — regardless
         of intermediate non-role-assignable groups, since `memberships` already holds
-        the transitive closure.
+        the transitive closure. Only active assignments are collected: an SP cannot
+        hold an eligible role, directly or via a group it cannot activate.
 
         A group's schedules are fetched at most once across every SP that reaches it
         via this instance's `schedule_cache`. Its key is namespaced by the Graph
@@ -844,13 +805,9 @@ class EntraCollector:
         """
         roles: list[DirectoryRoleRecord] = []
 
-        active, eligible = await self._principal_schedules(object_id)
+        active = await self._principal_schedules(object_id)
         roles.extend(
-            directory_role_from_schedule(s, "active", "direct", None) for s in active
-        )
-        roles.extend(
-            directory_role_from_schedule(s, "eligible", "direct", None)
-            for s in eligible
+            directory_role_from_schedule(s, "direct", None) for s in active
         )
 
         seen_groups: set[str] = set()
@@ -866,13 +823,9 @@ class EntraCollector:
             async def fetch(
                 gid: str = group_id, src: str = source
             ) -> list[DirectoryRoleRecord]:
-                g_active, g_eligible = await self._principal_schedules(gid)
+                g_active = await self._principal_schedules(gid)
                 return [
-                    directory_role_from_schedule(s, "active", src, gid)
-                    for s in g_active
-                ] + [
-                    directory_role_from_schedule(s, "eligible", src, gid)
-                    for s in g_eligible
+                    directory_role_from_schedule(s, src, gid) for s in g_active
                 ]
 
             roles.extend(
