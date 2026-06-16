@@ -6,10 +6,10 @@ Row-level logic — scope classification and role-name resolution, including bot
 bug fixes — lives in the pure `arg_transform` module; this module only runs the
 bounded ARG batch and hands the raw rows over.
 
-Per ADR-0001 the collector stays synchronous and is invoked from the async CLI
-via `asyncio.to_thread`. Per ADR-0002 a failure of the ARG batch is surfaced by
-the caller as a **Run Error** (`meta.runErrors`) — never a `sys.exit` — so the
-Entra-plane data still writes.
+The collector stays synchronous and is invoked from the async CLI via
+`asyncio.to_thread`. A failure of the ARG batch is surfaced by the caller as a
+**Run Error** (`meta.runErrors`) — never a `sys.exit` — so the Entra-plane data
+still writes.
 """
 
 from __future__ import annotations

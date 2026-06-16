@@ -42,7 +42,7 @@ Directory-Readers-only user hitting PIM) degrades to an SP Gap.
 
 - Pure annotation logic (`apply_pim_membership`, `_member_group_ids`) is unit
   tested in `tests/test_pim_membership.py`; the Graph I/O collector
-  (`collect_pim_for_groups`) stays untested per the PRD's pure-modules-only
+  (`collect_pim_for_groups`) stays untested per the pure-modules-only
   testing decision.
 - `pimMembership` was added to `GroupMembershipRecord` in `models.py`.
 
