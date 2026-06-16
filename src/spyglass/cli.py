@@ -2,7 +2,7 @@
 
 Wires the modules into one async vertical path: gate on preconditions (fail
 fast, non-zero), then resolve the selected Service Principal, build the Audit
-Report envelope, write JSON, and exit 0 (ADR-0002 two-tier failure model).
+Report envelope, write JSON, and exit 0 (two-tier failure model).
 """
 
 from __future__ import annotations
@@ -197,7 +197,7 @@ async def _run(args: argparse.Namespace) -> int:
         await credential.close()
 
     # Azure RBAC plane: a single full management-group-scoped ARG batch. A
-    # failure here is a Run Error (ADR-0002) — the Entra-plane data still writes.
+    # failure here is a Run Error — the Entra-plane data still writes.
     try:
         assignments_by_principal = await collect_azure_rbac(
             [r["objectId"] for r in records]

@@ -46,7 +46,7 @@ UTC now. Added `CredentialRecord` to `models` and a `credentials` field on
 `entra._collect_for_service_principal` (one injected `now` per SP), extending
 `APP_SELECT` to fetch the Application's credentials and recording an SP Gap when
 no local Application resolves. Tests live in `tests/test_credentials.py`; the
-I/O-bound `entra` wiring is intentionally untested per the PRD (tests target the
+I/O-bound `entra` wiring is intentionally untested (tests target the
 pure modules only).
 
 ## Blocked by

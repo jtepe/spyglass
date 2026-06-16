@@ -3,7 +3,7 @@
 These exercise the public `render()` interface only — given a sample Audit
 Report, assert observable facts about the produced HTML string. They never
 reach into private helpers or the exact markup, beyond the security-relevant
-guarantees the PRD calls out (self-containment, expired-credential flagging,
+guarantees the report calls out (self-containment, expired-credential flagging,
 the Management Group scope bucket, and injection-safe escaping).
 """
 

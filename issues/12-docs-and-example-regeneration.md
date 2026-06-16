@@ -15,9 +15,8 @@ produces SP Gaps on role/PIM endpoints); the `--html` flags; and the explicit
 non-goals (sign-in activity, effective-privilege computation, Terraform,
 `--management-group`, `--expiring-within`).
 
-Demote `implementation_plan.md` and `entra_audit_plan.md` to historical design
-notes with a one-line header pointing to the README and `CONTEXT.md` as the current
-source of truth. Delete the stale `example-audit.json` / `example-audit.html`
+Establish the README and `CONTEXT.md` as the current source of truth for the
+project's design. Delete the stale `example-audit.json` / `example-audit.html`
 (which describe the old RBAC-only schema) and regenerate both from a real `sp-audit`
 run against synthetic/fake-GUID data so the examples match the final schema.
 
@@ -26,15 +25,14 @@ run against synthetic/fake-GUID data so the examples match the final schema.
 - [x] README describes the `sp-audit` command, all selection flags, the envelope,
       both planes, every section, Global Reader guidance, the `--html` flags, and
       the documented non-goals.
-- [x] `implementation_plan.md` and `entra_audit_plan.md` carry a header marking them
-      historical and pointing to README + `CONTEXT.md`.
+- [x] The README and `CONTEXT.md` are the documented source of truth for the design.
 - [x] The stale example artifacts are removed and regenerated, with the current
       envelope and schema (including a Management Group scope example and credential
       status examples). No live tenant is available in this environment, so the
       examples are a synthetic, fake-GUID Audit Report run through the shipped
       `sp_audit.render` renderer rather than a literal `sp-audit` run.
 - [x] No doc references the removed Terraform path or `--management-group` (both now
-      appear only in the README non-goals and the historical-note plan files).
+      appear only in the README non-goals).
 
 ## Blocked by
 

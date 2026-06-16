@@ -29,8 +29,8 @@ collection; once collection starts, the run completes and exits 0 and writes JSO
 
 Establishes the `models`, `auth`, `report`, and `cli` modules and a minimal
 `entra` identity collector. Uses the glossary vocabulary (Service Principal,
-Application, Audit Report, Run Error, SP Gap) and respects ADR-0001 (async +
-msgraph-sdk) and ADR-0002 (envelope + failure tiers).
+Application, Audit Report, Run Error, SP Gap) and respects the async +
+msgraph-sdk and envelope + failure-tier design decisions.
 
 ## Acceptance criteria
 

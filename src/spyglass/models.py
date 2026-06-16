@@ -191,7 +191,7 @@ class Meta(TypedDict):
 
 
 class AuditReport(TypedDict):
-    """The object envelope a run produces. Not a bare array (see ADR-0002)."""
+    """The object envelope a run produces. Not a bare array."""
 
     meta: Meta
     servicePrincipals: list[ServicePrincipalRecord]

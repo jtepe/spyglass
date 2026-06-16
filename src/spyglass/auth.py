@@ -7,7 +7,7 @@ credential from the run's configuration: an explicit service principal (client
 id + secret + tenant), a managed identity, or — when neither is supplied — the
 same `az login` user (the historical default). `verify_preconditions` gates the
 run on both: a live CLI login *and* a Graph token from the selected credential.
-A failure aborts before any collection with a non-zero exit (ADR-0002).
+A failure aborts before any collection with a non-zero exit.
 """
 
 from __future__ import annotations

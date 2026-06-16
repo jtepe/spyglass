@@ -45,7 +45,7 @@ run-scoped `SingleFlight[str, ResourceInfo]` cache (display name + appRole map),
 so the Microsoft Graph resource SP is fetched once across all SPs and both
 planes. The cache is created in `_collect_all` and threaded through
 `_collect_for_service_principal`, where the section degrades to an SP Gap on
-failure. Per the PRD testing decisions, only the pure mappers are tested; the
+failure. Per the testing decisions, only the pure mappers are tested; the
 I/O collector is not. Full suite, ruff format/lint, and `ty` all pass.
 
 ## Blocked by

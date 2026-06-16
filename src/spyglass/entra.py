@@ -607,7 +607,7 @@ class EntraCollector:
         """Build a record for an already-resolved SP: Application, memberships, roles.
 
         Every section degrades to an SP Gap in the record's `errors[]` rather than
-        aborting the whole SP (ADR-0002 two-tier failures), so this never raises:
+        aborting the whole SP (two-tier failures), so this never raises:
         the base record is mapped first from the already-resolved SP, then the
         independent sections are gathered concurrently. The three chains carry the
         only intra-SP ordering: owners follows Application resolution (it needs the

@@ -128,8 +128,7 @@ The output is a single JSON **object** (an envelope) — not a bare array:
 
 ### Two-tier failure model
 
-The run distinguishes two kinds of failure (see
-[`docs/adr/0002-report-envelope-and-failure-tiers.md`](docs/adr/0002-report-envelope-and-failure-tiers.md)):
+The run distinguishes two kinds of failure:
 
 - **Run Errors** — plane-wide or precondition failures (e.g. the Azure RBAC batch
   query failed) recorded in top-level `meta.runErrors`. The rest of the report
@@ -214,7 +213,4 @@ uv run ruff format . # format
 uv run ty check      # type-check
 ```
 
-Design history lives in [`implementation_plan.md`](implementation_plan.md) and
-[`entra_audit_plan.md`](entra_audit_plan.md) (historical notes — the current
-sources of truth are this README and [`CONTEXT.md`](CONTEXT.md)). Architectural
-decisions are in [`docs/adr/`](docs/adr).
+The current sources of truth are this README and [`CONTEXT.md`](CONTEXT.md).
