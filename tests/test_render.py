@@ -163,7 +163,7 @@ def test_directory_roles_are_foregrounded_with_source_and_type() -> None:
         },
         {
             "roleName": "Application Administrator",
-            "assignmentType": "eligible",
+            "assignmentType": "active",
             "source": "iac-admins",
             "sourceGroupId": "grp-1",
             "directoryScopeId": "/",
@@ -177,7 +177,7 @@ def test_directory_roles_are_foregrounded_with_source_and_type() -> None:
     assert "Application Administrator" in out
     # The via-group attribution source and the assignment type are both shown.
     assert "iac-admins" in out
-    assert "eligible" in out
+    assert "active" in out
 
 
 def test_meta_header_and_run_errors_are_shown() -> None:
@@ -210,7 +210,7 @@ def test_long_tail_sections_render_as_collapsible_raw_json() -> None:
                         "displayName": "platform-admins",
                         "membershipType": "transitive",
                         "isAssignableToRole": True,
-                        "pimMembership": "eligible",
+                        "pimMembership": "assigned",
                     }
                 ],
                 "owners": [

@@ -118,7 +118,7 @@ The output is a single JSON **object** (an envelope) — not a bare array:
 | Field | Plane | What it holds |
 | --- | --- | --- |
 | `objectId`, `appId`, `displayName`, `tags`, `application` | directory | Identity of the SP and its nullable attached Application (`null` for managed identities, multi-tenant and gallery apps). |
-| `directoryRoles` | directory | Directory Roles from all four paths: `assignmentType` (`active`/`eligible`) × direct or via a role-assignable group. `source` is `"direct"` or the group's display name, with `sourceGroupId`. |
+| `directoryRoles` | directory | Active Directory Roles held directly or via a role-assignable group (`assignmentType` is always `active` — an SP cannot hold an eligible assignment, which needs an interactive activation). `source` is `"direct"` or the group's display name, with `sourceGroupId`. |
 | `groupMemberships` | directory | Direct and transitive group memberships, with `isAssignableToRole` and PIM-for-Groups status (`pimMembership`). |
 | `credentials` | directory | Secrets and certificates flattened across both the SP and its Application, each with a derived `status` (`active`/`expired`/`not-yet-valid`) and the raw dates. |
 | `applicationPermissions`, `delegatedPermissions` | directory | API permissions: application (`appRoleAssignment`) and delegated (`oauth2PermissionGrant`). |
@@ -141,8 +141,8 @@ before collection with a non-zero exit.
 
 See [`example-audit.json`](example-audit.json) for a full report on synthetic
 data — including a Management-Group-scoped assignment, all three credential
-statuses, an active and an eligible Directory Role, a managed identity (`null`
-Application) with SP Gaps, and a `runErrors` entry — and
+statuses, a permanent and a time-bound active Directory Role, a managed identity
+(`null` Application) with SP Gaps, and a `runErrors` entry — and
 [`example-audit.html`](example-audit.html) for the rendered view.
 
 ## Authentication

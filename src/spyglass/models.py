@@ -47,30 +47,33 @@ class GroupMembershipRecord(TypedDict):
     is the Graph flag that decides whether a directory role targeting the group
     is actually attributed to the SP (see CONTEXT.md, Via-group attribution).
     `pimMembership` records how the SP holds a role-assignable group via
-    PIM-for-Groups — standing (`assigned`), `eligible`, or `none` — and is `None`
-    for memberships where it does not apply (non-role-assignable groups).
+    PIM-for-Groups — standing (`assigned`) or `none` — and is `None` for
+    memberships where it does not apply (non-role-assignable groups). Eligible
+    (must-activate) membership never appears: an SP cannot perform the interactive
+    activation it requires.
     """
 
     groupId: str | None
     displayName: str | None
     membershipType: Literal["direct", "transitive"]
     isAssignableToRole: bool | None
-    pimMembership: Literal["assigned", "eligible", "none"] | None
+    pimMembership: Literal["assigned", "none"] | None
 
 
 class DirectoryRoleRecord(TypedDict):
     """A Directory Role (Entra plane) held by the Service Principal.
 
-    Carried in `ServicePrincipalRecord.directoryRoles`, populated from all four
-    assignment paths (`assignmentType` active/eligible × direct/via-group).
-    `source` is `"direct"` when the role targets the SP itself, or the group's
-    display name when attributed through a role-assignable group; `sourceGroupId`
-    carries that group's id (`None` for direct). Raw facts only — no computed
-    `effective` field (see CONTEXT.md, Via-group attribution).
+    Carried in `ServicePrincipalRecord.directoryRoles`, populated from both active
+    assignment paths (direct and via-group). `assignmentType` is always `active`:
+    an SP cannot hold an eligible assignment, which would require an interactive
+    activation it cannot perform. `source` is `"direct"` when the role targets the
+    SP itself, or the group's display name when attributed through a role-assignable
+    group; `sourceGroupId` carries that group's id (`None` for direct). Raw facts
+    only — no computed `effective` field (see CONTEXT.md, Via-group attribution).
     """
 
     roleName: str | None
-    assignmentType: Literal["active", "eligible"]
+    assignmentType: Literal["active"]
     source: str
     sourceGroupId: str | None
     directoryScopeId: str | None

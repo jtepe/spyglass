@@ -17,9 +17,6 @@ from msgraph.generated.models.unified_role_assignment_schedule import (
     UnifiedRoleAssignmentSchedule,
 )
 from msgraph.generated.models.unified_role_definition import UnifiedRoleDefinition
-from msgraph.generated.models.unified_role_eligibility_schedule import (
-    UnifiedRoleEligibilitySchedule,
-)
 from msgraph.generated.models.user import User
 
 from spyglass.entra import (
@@ -121,7 +118,7 @@ def test_directory_role_mapping_extracts_raw_facts() -> None:
         ),
     )
 
-    assert directory_role_from_schedule(schedule, "active", "direct", None) == {
+    assert directory_role_from_schedule(schedule, "direct", None) == {
         "roleName": "Global Reader",
         "assignmentType": "active",
         "source": "direct",
@@ -133,17 +130,15 @@ def test_directory_role_mapping_extracts_raw_facts() -> None:
 
 
 def test_directory_role_mapping_tolerates_missing_role_definition_and_dates() -> None:
-    schedule = UnifiedRoleEligibilitySchedule(
+    schedule = UnifiedRoleAssignmentSchedule(
         role_definition=None,
         directory_scope_id=None,
         schedule_info=RequestSchedule(start_date_time=None, expiration=None),
     )
 
-    assert directory_role_from_schedule(
-        schedule, "eligible", "finance-admins", "g-1"
-    ) == {
+    assert directory_role_from_schedule(schedule, "finance-admins", "g-1") == {
         "roleName": None,
-        "assignmentType": "eligible",
+        "assignmentType": "active",
         "source": "finance-admins",
         "sourceGroupId": "g-1",
         "directoryScopeId": None,
