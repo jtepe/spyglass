@@ -204,6 +204,15 @@ The following are explicitly out of scope for this tool:
 - **`--expiring-within` threshold flag** — raw credential dates are retained so
   "expiring soon" stays a consumer-side judgment.
 
+## Documentation
+
+Longer-form references live under [`docs/`](docs/):
+
+- [Directory roles and service principals](docs/service-principal-directory-roles.md)
+  — how a Service Principal can hold a Directory Role (direct, via a
+  role-assignable group, and via PIM), and why an *eligible* assignment is never
+  possible for one.
+
 ## Development
 
 ```bash
