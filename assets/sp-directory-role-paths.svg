@@ -52,13 +52,13 @@
   <rect class="paper stroke-accent" x="300" y="92" width="300" height="76" rx="12" stroke-width="2"/>
   <text class="accent tag"  x="318" y="116">DIRECT ASSIGNMENT</text>
   <text class="deep label"  x="318" y="139">Role targets the SP</text>
-  <text class="muted sub"   x="318" y="158">source = "direct" · permanent or time-bound</text>
+  <text class="muted sub"   x="318" y="158">source = "direct"</text>
 
   <!-- Mechanism 2: Group membership -->
   <rect class="paper stroke-accent" x="300" y="247" width="300" height="76" rx="12" stroke-width="2"/>
   <text class="accent tag"  x="318" y="271">GROUP MEMBERSHIP</text>
   <text class="deep label"  x="318" y="294">Role-assignable group</text>
-  <text class="muted sub"   x="318" y="313">source = group · transitive membership counts</text>
+  <text class="muted sub"   x="318" y="313">source = group · transitive</text>
 
   <!-- Mechanism 3: PIM (active) -->
   <rect class="paper stroke-accent" x="300" y="402" width="300" height="76" rx="12" stroke-width="2"/>
