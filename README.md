@@ -98,6 +98,12 @@ clear).
 - `--output PATH` — path for the JSON Audit Report (default `audit-report.json`).
 - `--concurrency N` — maximum Service Principals processed at once (default 8).
   Lower it if a throttling-prone tenant starts returning HTTP 429s.
+- `--log-level {error,warn,info,debug}` — logging verbosity on stderr (default
+  `info`). `error` shows only run-aborting failures (a clean run at this level
+  is silent), `warn` adds non-aborting errors such as SP Gaps and Run Errors,
+  `info` adds one line per Service Principal, and `debug` adds every HTTP call
+  made, stamped with the Service Principal in context. Colors are disabled when
+  stderr is not a terminal or `NO_COLOR` is set.
 
 ## The Audit Report
 

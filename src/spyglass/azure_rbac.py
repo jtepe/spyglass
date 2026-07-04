@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import subprocess
 
@@ -18,6 +19,8 @@ from .arg_transform import transform_assignments
 from .models import AzureRoleAssignment
 
 _PAGE = 1000
+
+_log = logging.getLogger("spyglass.rbac")
 
 # A bare role-definition GUID is what `transform_assignments` leaves as the
 # `roleName` when the ARG role-definition join did not resolve it — used to find
@@ -63,15 +66,18 @@ resourcecontainers
 """
 
 
-def _run_arg_query(query: str) -> list[dict]:
+def _run_arg_query(query: str, label: str) -> list[dict]:
     """Run one ARG query via `az graph query`, paging until exhausted."""
     rows: list[dict] = []
     skip_token: str | None = None
+    page_number = 1
     while True:
         command = ["az", "graph", "query", "-q", query, "--first", str(_PAGE)]
         if skip_token:
             command += ["--skip-token", skip_token]
         command += ["-o", "json"]
+        _log.debug("az graph query (%s): page %d", label, page_number)
+        page_number += 1
         completed = subprocess.run(command, capture_output=True, text=True, check=True)
         payload = json.loads(completed.stdout)
         if isinstance(payload, dict):
@@ -98,6 +104,7 @@ def _resolve_role_names_via_arm(guids: set[str]) -> dict[str, str]:
     if not guids:
         return {}
     try:
+        _log.debug("az role definition list (backfilling %d role names)", len(guids))
         completed = subprocess.run(
             ["az", "role", "definition", "list", "-o", "json"],
             capture_output=True,
@@ -105,7 +112,13 @@ def _resolve_role_names_via_arm(guids: set[str]) -> dict[str, str]:
             check=True,
         )
         definitions = json.loads(completed.stdout)
-    except subprocess.CalledProcessError, json.JSONDecodeError, OSError, ValueError:
+    except (
+        subprocess.CalledProcessError,
+        json.JSONDecodeError,
+        OSError,
+        ValueError,
+    ) as exc:
+        _log.warning("role-name backfill via ARM failed: %s", exc)
         return {}
 
     resolved: dict[str, str] = {}
@@ -133,9 +146,11 @@ def collect_azure_role_assignments(
         return {}
     quoted = ("'" + oid.replace("'", "''") + "'" for oid in object_ids)
     principals = ", ".join(quoted)
-    assignment_rows = _run_arg_query(_ASSIGNMENTS_QUERY.format(principals=principals))
-    role_definition_rows = _run_arg_query(_ROLE_DEFINITIONS_QUERY)
-    subscription_rows = _run_arg_query(_SUBSCRIPTIONS_QUERY)
+    assignment_rows = _run_arg_query(
+        _ASSIGNMENTS_QUERY.format(principals=principals), "role assignments"
+    )
+    role_definition_rows = _run_arg_query(_ROLE_DEFINITIONS_QUERY, "role definitions")
+    subscription_rows = _run_arg_query(_SUBSCRIPTIONS_QUERY, "subscriptions")
     by_principal = transform_assignments(
         assignment_rows, role_definition_rows, subscription_rows
     )

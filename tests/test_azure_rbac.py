@@ -31,7 +31,7 @@ def test_run_arg_query_follows_skip_token_across_pages(monkeypatch) -> None:
 
     monkeypatch.setattr(azure_rbac.subprocess, "run", fake_run)
 
-    rows = azure_rbac._run_arg_query("Resources")
+    rows = azure_rbac._run_arg_query("Resources", "test")
 
     assert rows == [{"id": "a"}, {"id": "b"}]
     # Page one carries no token; page two passes the token from page one.
@@ -94,7 +94,7 @@ def test_arm_backfill_failure_keeps_guid_fallback(monkeypatch) -> None:
     monkeypatch.setattr(
         azure_rbac,
         "_run_arg_query",
-        lambda query: (
+        lambda query, label: (
             [
                 {
                     "principalId": "sp-1",
