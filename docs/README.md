@@ -11,3 +11,6 @@ Graphics referenced from these docs live under [`../assets`](../assets).
 - [Directory roles and service principals](service-principal-directory-roles.md)
   — the direct, via-group, and PIM paths by which a Service Principal can hold a
   Directory Role, and why an *eligible* assignment is impossible for one.
+- [Required permissions, in detail](permissions.md) — the least-privileged
+  permission set per plane, derived call-by-call from the Graph and ARM
+  queries the tool makes.

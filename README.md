@@ -181,10 +181,12 @@ spyglass --managed-identity --object-id <sp-object-id>
     schedule or the PIM-for-Groups endpoints, so those sections degrade to SP
     Gaps in each affected SP's `errors[]` (the run still completes and exits 0).
   - **Service principal / managed identity.** Grant the **application** Graph
-    permissions `Directory.Read.All`, `Application.Read.All`,
-    `RoleManagement.Read.All`, and `PrivilegedAccess.Read.AzureADGroup` (admin
-    consent). Without the last two, the directory-role and PIM-for-Groups
-    sections return `403` and degrade to SP Gaps; the run still exits 0.
+    permissions `Directory.Read.All`, `RoleAssignmentSchedule.Read.Directory`,
+    and `PrivilegedAssignmentSchedule.Read.AzureADGroup` (admin consent) — the
+    least-privileged set covering every call the tool makes; the per-endpoint
+    derivation is in [`docs/permissions.md`](docs/permissions.md). Without the
+    last two, the directory-role and PIM-for-Groups sections return `403` and
+    degrade to SP Gaps; the run still exits 0.
 - **Azure RBAC plane (ARM).** A **Reader** (or equivalent) role over the
   management group hierarchy you want covered, held by the `az login` identity,
   so the Azure Resource Graph query can resolve assignments at every scope.
@@ -212,6 +214,8 @@ Longer-form references live under [`docs/`](docs/):
   — how a Service Principal can hold a Directory Role (direct, via a
   role-assignable group, and via PIM), and why an *eligible* assignment is never
   possible for one.
+- [Required permissions, in detail](docs/permissions.md) — the least-privileged
+  permission set per plane, derived call-by-call from what the tool queries.
 
 ## Development
 
