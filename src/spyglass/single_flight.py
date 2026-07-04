@@ -5,8 +5,6 @@ the same in-flight `asyncio.Task` instead of issuing their own call. A
 successful result stays cached so a repeat lookup does not refetch. A failed
 fetch is evicted rather than cached, so a later lookup retries cleanly and one
 failure cannot poison the key.
-
-Slices 5 and 8 reuse this primitive (e.g. `groupId -> displayName`).
 """
 
 from __future__ import annotations

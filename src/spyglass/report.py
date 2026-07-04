@@ -1,9 +1,4 @@
-"""Builds the `{ meta, servicePrincipals }` Audit Report envelope.
-
-Pure and network-free: it takes already-collected records plus run metadata and
-produces the object envelope, sorted by display name. Time (`generated_at`) is
-injected rather than read from the clock so the result is deterministic.
-"""
+"""Builds the `{ meta, servicePrincipals }` Audit Report envelope."""
 
 from __future__ import annotations
 

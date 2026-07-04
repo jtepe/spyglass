@@ -1,9 +1,4 @@
-"""Pure parsing of the Service Principal selection surface.
-
-Network- and IO-free: turns raw `--object-id` values and the textual contents
-of an `--ids-file` into one deduped, order-preserving list of object ids. The
-tag-query path lives in the collector, not here, because it touches the network.
-"""
+"""Pure parsing of the Service Principal selection surface."""
 
 from __future__ import annotations
 

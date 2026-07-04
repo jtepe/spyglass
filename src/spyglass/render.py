@@ -1,12 +1,4 @@
-"""Pure renderer: Audit Report envelope -> self-contained HTML string.
-
-Network-free and side-effect-free. The security surface (Directory Roles,
-Credentials with `expired` flagged, Azure Role Assignments) is rendered
-server-side as real markup so it is foregrounded and unit-testable; the
-long-tail sections are embedded as escaped raw JSON in collapsible `<details>`.
-A small embedded script drives only the sticky display-name filter over the
-already-rendered SP sections — there are no external assets.
-"""
+"""Pure renderer: Audit Report envelope -> self-contained HTML string."""
 
 from __future__ import annotations
 

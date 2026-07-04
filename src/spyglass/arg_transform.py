@@ -1,17 +1,7 @@
 """Pure transforms over raw Azure Resource Graph (ARG) rows.
 
 All row-level logic for the Azure RBAC plane lives here so it is network-free
-and unit-testable without an `az graph query` subprocess. This module houses the
-two lifted bug fixes:
-
-1. **Scope classification by prefix.** Management-group-scoped assignments are
-   classified by their `/providers/Microsoft.Management/managementGroups/` prefix
-   (previously they collided with Resource Group on segment count), and the
-   `managementGroupId` is parsed out.
-2. **Role-name resolution.** Both sides of the role-definition join are
-   normalized to the trailing GUID, role definitions are de-duplicated before
-   joining (so duplicates across subscriptions do not fan out assignment rows),
-   and the raw GUID is used only as a fallback for a deleted role.
+and unit-testable without an `az graph query` subprocess.
 """
 
 from __future__ import annotations
@@ -52,12 +42,6 @@ def transform_assignments(
     `assignment_rows` carry `principalId`, `roleDefinitionId`, `scope`, and
     `subscriptionId`. `role_definition_rows` carry the role definition `id` and
     `roleName`. `subscription_rows` carry `subscriptionId` and `subscriptionName`.
-
-    Role names are resolved by normalizing both the assignment's
-    `roleDefinitionId` and each definition's `id` to their trailing GUID, after
-    de-duplicating definitions by that GUID (so duplicate definitions across
-    subscriptions do not fan out assignment rows). An unresolved (deleted) role
-    falls back to the raw GUID. Output is keyed by `principalId`.
     """
     role_names: dict[str, str] = {}
     for row in role_definition_rows:

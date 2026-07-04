@@ -61,8 +61,7 @@ def resolve_graph_auth_config(
 ) -> GraphAuthConfig:
     """Merge CLI inputs with the standard `AZURE_*` env vars (CLI wins).
 
-    The client secret is read only from `AZURE_CLIENT_SECRET` — never a flag — so
-    it is not exposed in shell history or process listings.
+    The client secret is read only from `AZURE_CLIENT_SECRET`.
     """
     return GraphAuthConfig(
         client_id=client_id or _env("AZURE_CLIENT_ID"),
@@ -85,10 +84,6 @@ def build_graph_credential(config: GraphAuthConfig) -> AsyncTokenCredential:
         PreconditionError: on a partial service-principal config, or when
         managed identity is combined with service-principal inputs.
     """
-    # The identity selectors (client/tenant id) signal intent to use a service
-    # principal. The secret is deliberately excluded: it is read only from
-    # AZURE_CLIENT_SECRET, which may be present in the environment for other
-    # tools, so on its own it must not force service-principal auth.
     has_sp_input = any((config.client_id, config.tenant_id))
 
     if config.managed_identity:
@@ -168,11 +163,6 @@ def _az_account_tenant_id() -> str:
 
 async def verify_preconditions(credential: AsyncTokenCredential) -> str:
     """Gate the run on CLI login and a live Graph token; return the tenantId.
-
-    The Azure RBAC plane shells out to `az`, so an active `az login` is required
-    regardless of the Graph credential and remains the `tenantId` source. The
-    Graph token is acquired through `credential`, which may be the `az login`
-    user, a service principal, or a managed identity.
 
     Raises:
         PreconditionError: if not logged in, or a Graph token cannot be acquired.
