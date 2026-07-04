@@ -10,11 +10,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from msgraph import GraphServiceClient
+from kiota_authentication_azure.azure_identity_authentication_provider import (
+    AzureIdentityAuthenticationProvider,
+)
+from msgraph import GraphRequestAdapter, GraphServiceClient
+from msgraph_core import GraphClientFactory
 
 from .auth import (
     GRAPH_SCOPE,
@@ -25,12 +30,16 @@ from .auth import (
 )
 from .azure_rbac import collect_azure_rbac
 from .entra import DEFAULT_CONCURRENCY, EntraCollector
+from .log import LEVELS, configure_logging, instrument_http_client
 from .models import Selection, ServicePrincipalRecord
 from .render import render
 from .report import build_report
 from .selection_parse import merge_object_ids, parse_ids_file
 
 DEFAULT_OUTPUT = "audit-report.json"
+
+_log = logging.getLogger("spyglass.cli")
+_render_log = logging.getLogger("spyglass.render")
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -87,6 +96,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help=(
             "Path for the HTML report (implies --html). Defaults to the JSON "
             "output path with an .html suffix."
+        ),
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=list(LEVELS),
+        default="info",
+        help=(
+            "Logging verbosity on stderr (default: info). 'error' shows only "
+            "run-aborting failures, 'warn' adds non-aborting errors such as SP "
+            "gaps, 'info' adds one line per service principal, 'debug' adds "
+            "every call made."
         ),
     )
     parser.add_argument(
@@ -155,7 +175,7 @@ async def _run(args: argparse.Namespace) -> int:
         )
         credential = build_graph_credential(auth_config)
     except PreconditionError as exc:
-        print(f"spyglass: precondition failed: {exc}", file=sys.stderr)
+        _log.error("precondition failed: %s", exc)
         return 2
 
     file_ids: list[str] = []
@@ -164,7 +184,7 @@ async def _run(args: argparse.Namespace) -> int:
             with open(args.ids_file, encoding="utf-8") as fh:
                 file_ids = parse_ids_file(fh.read())
         except (OSError, ValueError) as exc:
-            print(f"spyglass: failed to read --ids-file: {exc}", file=sys.stderr)
+            _log.error("failed to read --ids-file: %s", exc)
             await credential.close()
             return 2
 
@@ -177,11 +197,19 @@ async def _run(args: argparse.Namespace) -> int:
         try:
             tenant_id = await verify_preconditions(credential)
         except PreconditionError as exc:
-            print(f"spyglass: precondition failed: {exc}", file=sys.stderr)
+            _log.error("precondition failed: %s", exc)
             return 2
 
         # Collection has started: from here we always complete, write, exit 0.
-        client = GraphServiceClient(credentials=credential, scopes=[GRAPH_SCOPE])
+        http_client = instrument_http_client(
+            GraphClientFactory.create_with_default_middleware()
+        )
+        auth_provider = AzureIdentityAuthenticationProvider(
+            credential, scopes=[GRAPH_SCOPE]
+        )
+        client = GraphServiceClient(
+            request_adapter=GraphRequestAdapter(auth_provider, http_client)
+        )
         collector = EntraCollector(client, concurrency=args.concurrency)
         if args.tag is not None:
             selection = {"objectIds": [], "tag": args.tag}
@@ -204,6 +232,7 @@ async def _run(args: argparse.Namespace) -> int:
         )
     except Exception as exc:  # noqa: BLE001 - degrade to a Run Error, never abort
         run_errors.append(f"Azure RBAC query failed: {exc}")
+        _log.warning("Azure RBAC query failed: %s", exc)
     else:
         for record in records:
             record["azureRoleAssignments"] = assignments_by_principal.get(
@@ -222,23 +251,24 @@ async def _run(args: argparse.Namespace) -> int:
         json.dump(report, fh, indent=2)
         fh.write("\n")
 
-    print(
-        f"spyglass: wrote {len(report['servicePrincipals'])} service principal(s) "
-        f"to {output}",
-        file=sys.stderr,
+    _log.info(
+        "wrote %d service principal(s) to %s",
+        len(report["servicePrincipals"]),
+        output,
     )
 
     # Optional self-contained HTML rendering on the same run (no prompt).
     if args.html or args.html_output:
         html_path = args.html_output or str(Path(output).with_suffix(".html"))
         Path(html_path).write_text(render(report), encoding="utf-8")
-        print(f"spyglass: wrote HTML report to {html_path}", file=sys.stderr)
+        _render_log.info("wrote HTML report to %s", html_path)
 
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    configure_logging(args.log_level)
     exit_code = asyncio.run(_run(args))
     if argv is None:
         sys.exit(exit_code)

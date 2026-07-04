@@ -14,6 +14,7 @@ it processes.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -69,6 +70,7 @@ from msgraph.generated.service_principals.service_principals_request_builder imp
 
 from .credentials import map_credentials
 from .graph_errors import describe_graph_error
+from .log import current_sp
 from .models import (
     ApplicationPermissionRecord,
     ApplicationRecord,
@@ -82,6 +84,8 @@ from .single_flight import SingleFlight
 
 # The all-zero appRole GUID is Graph's "default access" marker, not a named role.
 DEFAULT_ACCESS_APP_ROLE = "00000000-0000-0000-0000-000000000000"
+
+_log = logging.getLogger("spyglass.entra")
 
 # Conservative default fan-out across SPs; dialed down via --concurrency when a
 # throttling-prone tenant starts returning 429s.
@@ -300,6 +304,11 @@ def owner_from_graph(
     }
 
 
+def _sp_gap(record: ServicePrincipalRecord, message: str) -> None:
+    record["errors"].append(message)
+    _log.warning(message)
+
+
 async def _page_all(
     builder: Any, config: RequestConfiguration | None = None
 ) -> list[Any]:
@@ -377,12 +386,17 @@ class EntraCollector:
         service_principals: list[ServicePrincipal] = []
         run_errors: list[str] = []
         for object_id in object_ids:
+            token = current_sp.set(object_id)
             try:
                 service_principals.append(
                     await self._resolve_service_principal(object_id)
                 )
             except Exception as exc:  # noqa: BLE001 - degrade to a Run Error, never abort
-                run_errors.append(f"Failed to resolve '{object_id}': {exc}")
+                message = f"Failed to resolve '{object_id}': {exc}"
+                run_errors.append(message)
+                _log.warning(message)
+            finally:
+                current_sp.reset(token)
         records, collect_errors = await self._collect_all(service_principals)
         return records, run_errors + collect_errors
 
@@ -397,7 +411,9 @@ class EntraCollector:
         try:
             service_principals = await self._select_by_tag(tag)
         except Exception as exc:  # noqa: BLE001 - degrade to a Run Error, never abort
-            return [], [f"Failed to select by tag '{tag}': {exc}"]
+            message = f"Failed to select by tag '{tag}': {exc}"
+            _log.warning(message)
+            return [], [message]
         return await self._collect_all(service_principals)
 
     async def _select_by_tag(self, tag: str) -> list[ServicePrincipal]:
@@ -483,11 +499,16 @@ class EntraCollector:
 
         async def collect_one(sp: ServicePrincipal) -> ServicePrincipalRecord | None:
             async with self._semaphore:
+                token = current_sp.set(sp.id)
                 try:
                     return await self._collect_for_service_principal(sp)
                 except Exception as exc:  # noqa: BLE001 - degrade to a Run Error
-                    run_errors.append(f"Failed to collect '{sp.id}': {exc}")
+                    message = f"Failed to collect '{sp.id}': {exc}"
+                    run_errors.append(message)
+                    _log.warning(message)
                     return None
+                finally:
+                    current_sp.reset(token)
 
         results = await asyncio.gather(*(collect_one(sp) for sp in service_principals))
         records = [record for record in results if record is not None]
@@ -497,6 +518,7 @@ class EntraCollector:
         self, sp: ServicePrincipal
     ) -> ServicePrincipalRecord:
         """Build a record for an SP: Application, memberships, roles."""
+        _log.info("resolving service principal '%s'", sp.display_name)
         record = sp_record_from_graph(sp, None)
         now = datetime.now(UTC)
         record["credentials"] = map_credentials(
@@ -509,8 +531,9 @@ class EntraCollector:
                 try:
                     application = await self._resolve_application(sp.app_id)
                 except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
-                    record["errors"].append(
-                        f"Failed to resolve application: {describe_graph_error(exc)}"
+                    _sp_gap(
+                        record,
+                        f"Failed to resolve application: {describe_graph_error(exc)}",
                     )
                 else:
                     if application is not None:
@@ -527,17 +550,18 @@ class EntraCollector:
                             )
                         )
                     else:
-                        record["errors"].append(
+                        _sp_gap(
+                            record,
                             "No Application object found for appId "
-                            f"'{sp.app_id}' (SP Gap)"
+                            f"'{sp.app_id}' (SP Gap)",
                         )
             try:
                 record["owners"] = await self.collect_owners(
                     record["objectId"], app_object_id
                 )
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
-                record["errors"].append(
-                    f"Failed to collect owners: {describe_graph_error(exc)}"
+                _sp_gap(
+                    record, f"Failed to collect owners: {describe_graph_error(exc)}"
                 )
 
         async def memberships_and_roles() -> None:
@@ -546,8 +570,9 @@ class EntraCollector:
                     record["objectId"]
                 )
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
-                record["errors"].append(
-                    f"Failed to collect group memberships: {describe_graph_error(exc)}"
+                _sp_gap(
+                    record,
+                    f"Failed to collect group memberships: {describe_graph_error(exc)}",
                 )
             try:
                 active = await self.collect_pim_for_groups(record["objectId"])
@@ -555,17 +580,19 @@ class EntraCollector:
                     record["groupMemberships"], active
                 )
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
-                record["errors"].append(
+                _sp_gap(
+                    record,
                     "Failed to collect PIM-for-Groups status: "
-                    f"{describe_graph_error(exc)}"
+                    f"{describe_graph_error(exc)}",
                 )
             try:
                 record["directoryRoles"] = await self.collect_directory_roles(
                     record["objectId"], record["groupMemberships"]
                 )
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
-                record["errors"].append(
-                    f"Failed to collect directory roles: {describe_graph_error(exc)}"
+                _sp_gap(
+                    record,
+                    f"Failed to collect directory roles: {describe_graph_error(exc)}",
                 )
 
         async def api_permissions() -> None:
@@ -576,8 +603,9 @@ class EntraCollector:
                 record["applicationPermissions"] = app_perms
                 record["delegatedPermissions"] = delegated_perms
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
-                record["errors"].append(
-                    f"Failed to collect API permissions: {describe_graph_error(exc)}"
+                _sp_gap(
+                    record,
+                    f"Failed to collect API permissions: {describe_graph_error(exc)}",
                 )
 
         await asyncio.gather(
