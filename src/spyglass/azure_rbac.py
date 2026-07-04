@@ -5,11 +5,6 @@ collector. The query always covers all management groups (no scoping flag).
 Row-level logic — scope classification and role-name resolution, including both
 bug fixes — lives in the pure `arg_transform` module; this module only runs the
 bounded ARG batch and hands the raw rows over.
-
-The collector stays synchronous and is invoked from the async CLI via
-`asyncio.to_thread`. A failure of the ARG batch is surfaced by the caller as a
-**Run Error** (`meta.runErrors`) — never a `sys.exit` — so the Entra-plane data
-still writes.
 """
 
 from __future__ import annotations
@@ -69,14 +64,7 @@ resourcecontainers
 
 
 def _run_arg_query(query: str) -> list[dict]:
-    """Run one ARG query via `az graph query`, paging until exhausted.
-
-    Pages with ARG's `$skipToken` continuation (`--skip-token`) rather than a
-    numeric `--skip`: the token carries server-side continuation state, so paging
-    stays correct across result sets far larger than the 1000-record page without
-    relying on offset arithmetic. The response's `skip_token` is empty/absent on
-    the final page.
-    """
+    """Run one ARG query via `az graph query`, paging until exhausted."""
     rows: list[dict] = []
     skip_token: str | None = None
     while True:
@@ -139,9 +127,7 @@ def collect_azure_role_assignments(
     and delegates all row-level logic to `transform_assignments`. Any role name
     the ARG join could not resolve (left as a bare GUID) is backfilled from ARM
     via `az role definition list`, so built-in roles still surface a friendly
-    name. Returns an empty mapping without shelling out when the selection is
-    empty. Any subprocess failure of the ARG batch propagates to the caller,
-    which records it as a Run Error.
+    name.
     """
     if not object_ids:
         return {}

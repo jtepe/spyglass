@@ -1,17 +1,14 @@
 """Entra (directory-plane) identity collector.
 
 Resolves a Service Principal strictly by object id via
-`GET /servicePrincipals/{id}`, falling back to an `appId eq` filter only on a
-404, and attaches its related Application as a nullable object. The pure
-mapping functions (Graph model -> record) are network-free so they can be
-unit-tested without a live Graph client.
+`GET /servicePrincipals/{id}`, and attaches its related Application as a
+nullable object. The pure mapping functions (Graph model -> record) are
+network-free.
 
 The network-bound collectors live on `EntraCollector`, which owns the Graph
-client plus the run-scoped single-flight caches and the concurrency bound. One
+client plus caches and a concurrency bound. One
 collector instance is one selection/run: its caches are shared across every SP
-it processes (so a group's schedules or a resource SP's appRoles are fetched
-once) and must not be reused across logically separate runs. The pure mapping
-functions stay module-level — they hold no state and are unit-tested directly.
+it processes.
 """
 
 from __future__ import annotations
@@ -95,10 +92,6 @@ DEFAULT_CONCURRENCY = 5
 # its appRoleId -> value map.
 type ResourceInfo = tuple[str | None, dict[str, str]]
 
-# Unified $select so SP-side fields are never path-dependent across the
-# selection routes (by object id, appId-eq fallback, and tag query). Every SP
-# enters the per-SP fan-out with the same baseline, including the credential
-# fields, so SP-side credentials are never path-dependent.
 SP_SELECT = [
     "id",
     "displayName",
@@ -118,11 +111,8 @@ GROUP_SELECT = ["id", "displayName", "isAssignableToRole"]
 RESOURCE_SELECT = ["id", "displayName", "appId", "appRoles"]
 OWNER_SELECT = ["id", "displayName"]
 
-# Service principals can only ever hold *active* directory-role assignments
-# (eligible assignments require an interactive activation an SP cannot perform),
-# so the collector reads only assignment schedules. `scheduleInfo` lives on the
-# concrete subclass rather than `UnifiedRoleScheduleBase`, so this aliases the
-# concrete type the readers expect.
+# `scheduleInfo` lives on the concrete subclass rather than
+# `UnifiedRoleScheduleBase`, so this aliases the concrete type.
 type RoleSchedule = UnifiedRoleAssignmentSchedule
 
 
@@ -138,11 +128,7 @@ def application_record_from_graph(app: Application) -> ApplicationRecord:
 def sp_record_from_graph(
     sp: ServicePrincipal, application: Application | None
 ) -> ServicePrincipalRecord:
-    """Map a Graph servicePrincipal (+ optional Application) onto a record.
-
-    Pure: no network, no clock. `objectId` must be present on a resolved SP;
-    everything else degrades to `None`/empty.
-    """
+    """Map a Graph servicePrincipal (+ optional Application) onto a record."""
     if sp.id is None:
         raise ValueError("Resolved service principal has no object id")
     return {
@@ -155,8 +141,6 @@ def sp_record_from_graph(
             if application is not None
             else None
         ),
-        # Azure RBAC plane is folded in by the CLI after the ARG batch query;
-        # every record starts with an empty (directory-plane-only) list.
         "azureRoleAssignments": [],
         "groupMemberships": [],
         "directoryRoles": [],
@@ -171,13 +155,7 @@ def sp_record_from_graph(
 def group_membership_from_graph(
     group: Group, membership_type: Literal["direct", "transitive"]
 ) -> GroupMembershipRecord:
-    """Map a Graph Group onto a membership record, labeling how it is held.
-
-    Pure: no network. `membership_type` is supplied by the caller — `member_of`
-    yields `direct`, `transitiveMemberOf` yields `transitive`. `pimMembership`
-    starts unset (`None`); `apply_pim_membership` fills it in once the
-    PIM-for-Groups schedules are collected.
-    """
+    """Map a Graph Group onto a membership record, labeling how it is held."""
     return {
         "groupId": group.id,
         "displayName": group.display_name,
@@ -187,17 +165,12 @@ def group_membership_from_graph(
     }
 
 
-# Only PIM-for-Groups *assignment* (active) schedules are read: an SP cannot
-# activate an eligible membership, so eligibility schedules never apply to it.
+# Only PIM-for-Groups *assignment* (active) schedules are read.
 type PimSchedule = PrivilegedAccessGroupAssignmentSchedule
 
 
 def _member_group_ids(schedules: list[PimSchedule]) -> set[str]:
-    """Group ids the SP holds with `accessId = member` (not `owner`).
-
-    Role inheritance flows through *member* PIM-for-Groups access, never owner
-    access, so owner schedules are dropped here.
-    """
+    """Group ids the SP holds with `accessId = member` (not `owner`)."""
     return {
         schedule.group_id
         for schedule in schedules
@@ -210,17 +183,7 @@ def apply_pim_membership(
     memberships: list[GroupMembershipRecord],
     active_schedules: list[PrivilegedAccessGroupAssignmentSchedule],
 ) -> list[GroupMembershipRecord]:
-    """Annotate each role-assignable membership with its PIM-for-Groups status.
-
-    Pure: no network. `active_schedules` are PIM-for-Groups assignment schedules
-    (standing membership → `assigned`); a role-assignable group not among them is
-    `none`. Eligible (must-activate) membership is never considered: an SP cannot
-    perform the interactive activation it requires, so it can only ever hold a
-    standing membership. Only `member` access counts (see `_member_group_ids`).
-    Non-role-assignable memberships are left at `None`, since PIM-for-Groups
-    status is only meaningful for role-inheritance reasoning. Returns new records;
-    inputs are not mutated.
-    """
+    """Annotate each role-assignable membership with its PIM-for-Groups status."""
     active = _member_group_ids(list(active_schedules))
     annotated: list[GroupMembershipRecord] = []
     for membership in memberships:
@@ -239,11 +202,9 @@ def directory_role_from_schedule(
 ) -> DirectoryRoleRecord:
     """Map a Graph role assignment schedule onto a Directory Role record.
 
-    Pure: no network, no clock. `assignmentType` is always `active`: only
-    `roleAssignmentSchedules` are read, because an SP cannot hold an eligible
-    assignment. `source`/`source_group_id` carry the Via-group attribution:
-    `"direct"`/`None` for a role targeting the SP itself, or the group's display
-    name/id for one reached through a role-assignable group. Raw facts only.
+    `source`/`source_group_id` carry the Via-group attribution: `"direct"`/`None`
+    for a role targeting the SP itself, or the group's display name/id for one
+    reached through a role-assignable group.
     """
     role_definition = schedule.role_definition
     role_name = role_definition.display_name if role_definition is not None else None
@@ -263,11 +224,7 @@ def directory_role_from_schedule(
 
 
 def app_role_value_map(resource: ServicePrincipal) -> dict[str, str]:
-    """Build a resource SP's `appRoleId -> value` map for permission resolution.
-
-    Pure: no network. Roles without an id or value are dropped — they cannot be
-    matched against an assignment's `appRoleId` nor surfaced as a name.
-    """
+    """Build a resource SP's `appRoleId -> value` map for permission resolution."""
     return {
         str(role.id): role.value
         for role in resource.app_roles or []
@@ -276,12 +233,7 @@ def app_role_value_map(resource: ServicePrincipal) -> dict[str, str]:
 
 
 def resolve_app_role_value(app_role_id: Any, app_roles: dict[str, str]) -> str | None:
-    """Resolve an `appRoleId` GUID to its human-readable value.
-
-    Pure: no network. The all-zero GUID is Graph's "default access" marker, not a
-    named role. An unknown GUID degrades to `None` rather than the raw GUID, which
-    is retained separately on the record.
-    """
+    """Resolve an `appRoleId` GUID to its human-readable value."""
     if app_role_id is None:
         return None
     role_id = str(app_role_id)
@@ -295,11 +247,7 @@ def application_permission_from_graph(
     resource_display_name: str | None,
     permission: str | None,
 ) -> ApplicationPermissionRecord:
-    """Map a Graph `appRoleAssignment` onto an application permission record.
-
-    Pure: no network. The resource display name and resolved `permission` value
-    are supplied by the caller, which threads them through the resourceId cache.
-    """
+    """Map a Graph `appRoleAssignment` onto an application permission record."""
     return {
         "resourceId": (
             str(assignment.resource_id) if assignment.resource_id is not None else None
@@ -315,11 +263,7 @@ def application_permission_from_graph(
 def delegated_permission_from_graph(
     grant: OAuth2PermissionGrant, resource_display_name: str | None
 ) -> DelegatedPermissionRecord:
-    """Map a Graph `oauth2PermissionGrant` onto a delegated permission record.
-
-    Pure: no network. The space-delimited `scope` string is split into a list;
-    `principalId` is meaningful only for the `Principal` consent type.
-    """
+    """Map a Graph `oauth2PermissionGrant` onto a delegated permission record."""
     return {
         "resourceId": (
             str(grant.resource_id) if grant.resource_id is not None else None
@@ -334,11 +278,7 @@ def delegated_permission_from_graph(
 def _owner_type(
     owner: DirectoryObject,
 ) -> Literal["user", "servicePrincipal", "group"] | None:
-    """Classify an owner by its concrete DirectoryObject subtype.
-
-    Pure: no network. An unrecognized directory object kind degrades to `None`
-    rather than guessing.
-    """
+    """Classify an owner by its concrete DirectoryObject subtype."""
     if isinstance(owner, User):
         return "user"
     if isinstance(owner, ServicePrincipal):
@@ -351,13 +291,7 @@ def _owner_type(
 def owner_from_graph(
     owner: DirectoryObject, owned: Literal["application", "servicePrincipal"]
 ) -> OwnerRecord:
-    """Map a Graph owner DirectoryObject onto an owner record.
-
-    Pure: no network. `owned` is supplied by the caller — which object's owners
-    are being read — mirroring the credential discriminator. `ownerType` is taken
-    from the concrete subtype so an SP-owns-SP privilege chain stays visible, not
-    hidden among human owners.
-    """
+    """Map a Graph owner DirectoryObject onto an owner record."""
     return {
         "owner": owned,
         "ownerType": _owner_type(owner),
@@ -414,17 +348,11 @@ class EntraCollector:
     """Run-scoped collector for the directory plane.
 
     Owns the Graph `client`, the two single-flight caches, and the concurrency
-    semaphore so the network collectors no longer thread them through every
-    signature. One instance is one selection/run: the caches are shared across
+    semaphore. One instance is one selection/run: the caches are shared across
     every SP processed by this instance — a group's directory-role schedules and
     a resource SP's appRoles/display name are each fetched once, and single-flight
     keeps them from stampeding under concurrency — so an instance must not be
-    reused across logically separate runs. The caches accept injection (for tests
-    or to deliberately share state) but default to fresh ones per instance.
-
-    asyncio is cooperatively scheduled on one thread, so the instance state
-    (caches, semaphore) is safe to share across the fanned-out collectors without
-    extra locking beyond what `SingleFlight` already provides.
+    reused across logically separate runs.
     """
 
     def __init__(
@@ -445,13 +373,7 @@ class EntraCollector:
     async def collect_by_object_ids(
         self, object_ids: list[str]
     ) -> tuple[list[ServicePrincipalRecord], list[str]]:
-        """Collect records for an explicit set of object ids.
-
-        Each id is resolved independently, so an unresolvable id degrades to a Run
-        Error rather than aborting the run; the rest are then collected via the
-        shared `_collect_all` path under the concurrency bound. Returns the records
-        plus all Run Errors.
-        """
+        """Collect records for an explicit set of object ids."""
         service_principals: list[ServicePrincipal] = []
         run_errors: list[str] = []
         for object_id in object_ids:
@@ -470,9 +392,7 @@ class EntraCollector:
         """Collect every Service Principal carrying `tag` into records.
 
         Tag selection is a single Graph query: if it fails the whole selection is a
-        Run Error. The selected SPs are then collected via the shared `_collect_all`
-        path under the concurrency bound, so one SP's failure no longer drops the
-        rest. Returns the records plus all Run Errors.
+        Run Error.
         """
         try:
             service_principals = await self._select_by_tag(tag)
@@ -558,17 +478,7 @@ class EntraCollector:
     async def _collect_all(
         self, service_principals: list[ServicePrincipal]
     ) -> tuple[list[ServicePrincipalRecord], list[str]]:
-        """Collect a list of already-resolved SPs into records, isolating failures.
-
-        Shared by both selection paths so a per-SP failure never aborts the batch.
-        SPs are processed concurrently under this instance's `asyncio.Semaphore`
-        bound so a large fleet completes without flooding the tenant. The shared
-        `schedule_cache`/`resource_cache` mean a group's directory-role schedules
-        and a resource SP's appRoles/display name are each fetched once for the run
-        — single-flight keeps them from stampeding under concurrency. Per-SP
-        sections already degrade to SP Gaps; an unexpected collection failure here
-        degrades to a Run Error rather than dropping every other SP.
-        """
+        """Collect a list of already-resolved SPs into records, isolating failures."""
         run_errors: list[str] = []
 
         async def collect_one(sp: ServicePrincipal) -> ServicePrincipalRecord | None:
@@ -586,15 +496,7 @@ class EntraCollector:
     async def _collect_for_service_principal(
         self, sp: ServicePrincipal
     ) -> ServicePrincipalRecord:
-        """Build a record for an already-resolved SP: Application, memberships, roles.
-
-        Every section degrades to an SP Gap in the record's `errors[]` rather than
-        aborting the whole SP (two-tier failures), so this never raises:
-        the base record is mapped first from the already-resolved SP, then the
-        independent sections are gathered concurrently. The three chains carry the
-        only intra-SP ordering: owners follows Application resolution (it needs the
-        Application object id), and directory-role attribution follows memberships.
-        """
+        """Build a record for an SP: Application, memberships, roles."""
         record = sp_record_from_graph(sp, None)
         now = datetime.now(UTC)
         record["credentials"] = map_credentials(
@@ -716,16 +618,7 @@ class EntraCollector:
         return memberships
 
     async def resolve_group_name(self, group_id: str) -> str | None:
-        """Resolve a group's display name, fetching at most once per group id.
-
-        Backed by the instance's group-name cache: concurrent or repeat lookups
-        for the same group share one `GET /groups/{id}` instead of refetching.
-
-        The cache key is namespaced by the Graph resource path (`/groups/{id}`) so
-        it never collides with the other instance caches (e.g. schedules) keyed by
-        bare id.
-        """
-
+        """Resolve a group's display name, fetching at most once per group id. """
         async def fetch() -> str | None:
             config = RequestConfiguration(
                 query_parameters=GroupItemRequestBuilder.GroupItemRequestBuilderGetQueryParameters(
@@ -763,14 +656,7 @@ class EntraCollector:
     async def collect_pim_for_groups(
         self, principal_id: str
     ) -> list[PrivilegedAccessGroupAssignmentSchedule]:
-        """Fetch the SP's active PIM-for-Groups (standing-membership) schedules.
-
-        The endpoint returns HTTP 400 without a `$filter`, so it is always issued
-        with a `principalId` filter; `groupId` and `accessId` are then read off the
-        results by `apply_pim_membership`. Only assignment (standing-membership)
-        schedules are read — eligibility schedules are skipped because an SP cannot
-        activate an eligible membership.
-        """
+        """Fetch the SP's active PIM-for-Groups (standing-membership) schedules."""
         escaped = principal_id.replace("'", "''")
         active_config = RequestConfiguration(
             query_parameters=AssignmentSchedulesRequestBuilder.AssignmentSchedulesRequestBuilderGetQueryParameters(
@@ -795,13 +681,7 @@ class EntraCollector:
         group's schedules and attributes every returned role to the SP with the
         group's display name as `source` and its id as `sourceGroupId` — regardless
         of intermediate non-role-assignable groups, since `memberships` already holds
-        the transitive closure. Only active assignments are collected: an SP cannot
-        hold an eligible role, directly or via a group it cannot activate.
-
-        A group's schedules are fetched at most once across every SP that reaches it
-        via this instance's `schedule_cache`. Its key is namespaced by the Graph
-        resource path so the cache never collides with other single-flight users
-        (e.g. group-name lookups) keyed by bare id.
+        the transitive closure.
         """
         roles: list[DirectoryRoleRecord] = []
 
@@ -836,12 +716,7 @@ class EntraCollector:
         return roles
 
     async def _resolve_resource(self, resource_id: str) -> ResourceInfo:
-        """Resolve a resource SP to its display name and `appRoleId -> value` map.
-
-        Backed by this instance's `resource_cache`, keyed by the Graph resource
-        path: the Microsoft Graph SP — targeted by most assignments — is fetched
-        once and reused across every SP and both permission planes for the run.
-        """
+        """Resolve a resource SP to its display name and `appRoleId -> value` map."""
 
         async def fetch() -> ResourceInfo:
             config = RequestConfiguration(
@@ -861,14 +736,7 @@ class EntraCollector:
     async def collect_api_permissions(
         self, object_id: str
     ) -> tuple[list[ApplicationPermissionRecord], list[DelegatedPermissionRecord]]:
-        """Collect the SP's application and delegated API permissions.
-
-        Application permissions (`appRoleAssignments`) resolve their `appRoleId` to a
-        human-readable value through the resource SP's `appRoles`; delegated
-        permissions (`oauth2PermissionGrants`) resolve only their resource display
-        name. Both resolutions go through this instance's `resource_cache` keyed by
-        `resourceId`, so a resource SP is fetched once per run.
-        """
+        """Collect the SP's application and delegated API permissions."""
         sp_item = self._client.service_principals.by_service_principal_id(object_id)
 
         application_permissions: list[ApplicationPermissionRecord] = []
@@ -897,13 +765,7 @@ class EntraCollector:
     async def collect_owners(
         self, object_id: str, app_object_id: str | None
     ) -> list[OwnerRecord]:
-        """Collect Owners of the SP and (when present) its Application, flattened.
-
-        Pages `/servicePrincipals/{id}/owners` and, only when the SP has an
-        Application object, `/applications/{id}/owners`, each with `$select=id,
-        displayName`. Every entry is tagged with which object it owns; `ownerType` is
-        derived from the owner's directory subtype so a non-human owner is visible.
-        """
+        """Collect Owners of the SP and (when present) its Application, flattened."""
         sp_config = RequestConfiguration(
             query_parameters=ServicePrincipalOwnersRequestBuilder.OwnersRequestBuilderGetQueryParameters(
                 select=OWNER_SELECT,
