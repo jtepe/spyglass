@@ -646,7 +646,8 @@ class EntraCollector:
         return memberships
 
     async def resolve_group_name(self, group_id: str) -> str | None:
-        """Resolve a group's display name, fetching at most once per group id. """
+        """Resolve a group's display name, fetching at most once per group id."""
+
         async def fetch() -> str | None:
             config = RequestConfiguration(
                 query_parameters=GroupItemRequestBuilder.GroupItemRequestBuilderGetQueryParameters(
@@ -660,9 +661,7 @@ class EntraCollector:
 
         return await self._group_name_cache.do(f"/groups/{group_id}", fetch)
 
-    async def _principal_schedules(
-        self, principal_id: str
-    ) -> list[RoleSchedule]:
+    async def _principal_schedules(self, principal_id: str) -> list[RoleSchedule]:
         """Fetch the active directory-role assignment schedules for one principal id.
 
         The principal may be the SP itself (direct paths) or a role-assignable group
@@ -714,9 +713,7 @@ class EntraCollector:
         roles: list[DirectoryRoleRecord] = []
 
         active = await self._principal_schedules(object_id)
-        roles.extend(
-            directory_role_from_schedule(s, "direct", None) for s in active
-        )
+        roles.extend(directory_role_from_schedule(s, "direct", None) for s in active)
 
         seen_groups: set[str] = set()
         for membership in memberships:
@@ -732,9 +729,7 @@ class EntraCollector:
                 gid: str = group_id, src: str = source
             ) -> list[DirectoryRoleRecord]:
                 g_active = await self._principal_schedules(gid)
-                return [
-                    directory_role_from_schedule(s, src, gid) for s in g_active
-                ]
+                return [directory_role_from_schedule(s, src, gid) for s in g_active]
 
             roles.extend(
                 await self._schedule_cache.do(

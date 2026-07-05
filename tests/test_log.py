@@ -97,6 +97,5 @@ def test_instrumented_client_logs_each_call(caplog) -> None:
         asyncio.run(hook(Response()))
 
     assert (
-        "GET https://graph.microsoft.com/v1.0/servicePrincipals/x -> 200"
-        in caplog.text
+        "GET https://graph.microsoft.com/v1.0/servicePrincipals/x -> 200" in caplog.text
     )
