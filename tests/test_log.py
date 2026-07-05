@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import pytest
+
 from spyglass.log import (
     LEVELS,
     ColorFormatter,
@@ -12,6 +14,20 @@ from spyglass.log import (
     current_sp,
     instrument_http_client,
 )
+
+
+@pytest.fixture(autouse=True)
+def _restore_spyglass_logger():
+    """Undo configure_logging's handler/propagate changes between tests.
+
+    configure_logging disables propagation on the "spyglass" logger, which
+    would otherwise stop caplog (attached at the root) from seeing records
+    in tests that run afterwards.
+    """
+    logger = logging.getLogger("spyglass")
+    saved = (logger.level, logger.propagate, list(logger.handlers))
+    yield
+    logger.level, logger.propagate, logger.handlers = saved
 
 
 def _record(level: int, message: str) -> logging.LogRecord:
