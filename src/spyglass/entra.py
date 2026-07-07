@@ -120,6 +120,11 @@ OWNER_SELECT = ["id", "displayName"]
 type RoleSchedule = UnifiedRoleAssignmentSchedule
 
 
+def _iso_now() -> str:
+    """The current UTC instant as an ISO 8601 string, for `retrievedAt` stamps."""
+    return datetime.now(UTC).isoformat()
+
+
 def application_record_from_graph(app: Application) -> ApplicationRecord:
     """Map a Graph Application onto the nullable attached Application record."""
     return {
@@ -153,6 +158,7 @@ def sp_record_from_graph(
         "delegatedPermissions": [],
         "owners": [],
         "errors": [],
+        "retrievedAt": {},
     }
 
 
@@ -383,13 +389,16 @@ class EntraCollector:
         self, object_ids: list[str]
     ) -> tuple[list[ServicePrincipalRecord], list[str]]:
         """Collect records for an explicit set of object ids."""
-        service_principals: list[ServicePrincipal] = []
+        resolved: list[tuple[ServicePrincipal, datetime]] = []
         run_errors: list[str] = []
         for object_id in object_ids:
             token = current_sp.set(object_id)
             try:
-                service_principals.append(
-                    await self._resolve_service_principal(object_id)
+                resolved.append(
+                    (
+                        await self._resolve_service_principal(object_id),
+                        datetime.now(UTC),
+                    )
                 )
             except Exception as exc:  # noqa: BLE001 - degrade to a Run Error, never abort
                 message = f"Failed to resolve '{object_id}': {exc}"
@@ -397,7 +406,7 @@ class EntraCollector:
                 _log.warning(message)
             finally:
                 current_sp.reset(token)
-        records, collect_errors = await self._collect_all(service_principals)
+        records, collect_errors = await self._collect_all(resolved)
         return records, run_errors + collect_errors
 
     async def collect_by_tag(
@@ -414,7 +423,9 @@ class EntraCollector:
             message = f"Failed to select by tag '{tag}': {exc}"
             _log.warning(message)
             return [], [message]
-        return await self._collect_all(service_principals)
+        # One selection query resolved every SP, so they share one timestamp.
+        selected_at = datetime.now(UTC)
+        return await self._collect_all([(sp, selected_at) for sp in service_principals])
 
     async def _select_by_tag(self, tag: str) -> list[ServicePrincipal]:
         """Select Service Principals by tag, paging through all results.
@@ -492,16 +503,18 @@ class EntraCollector:
         return matches[0] if matches else None
 
     async def _collect_all(
-        self, service_principals: list[ServicePrincipal]
+        self, resolved: list[tuple[ServicePrincipal, datetime]]
     ) -> tuple[list[ServicePrincipalRecord], list[str]]:
-        """Collect a list of already-resolved SPs into records, isolating failures."""
+        """Collect already-resolved `(SP, resolved-at)` pairs, isolating failures."""
         run_errors: list[str] = []
 
-        async def collect_one(sp: ServicePrincipal) -> ServicePrincipalRecord | None:
+        async def collect_one(
+            sp: ServicePrincipal, resolved_at: datetime
+        ) -> ServicePrincipalRecord | None:
             async with self._semaphore:
                 token = current_sp.set(sp.id)
                 try:
-                    return await self._collect_for_service_principal(sp)
+                    return await self._collect_for_service_principal(sp, resolved_at)
                 except Exception as exc:  # noqa: BLE001 - degrade to a Run Error
                     message = f"Failed to collect '{sp.id}': {exc}"
                     run_errors.append(message)
@@ -510,16 +523,26 @@ class EntraCollector:
                 finally:
                     current_sp.reset(token)
 
-        results = await asyncio.gather(*(collect_one(sp) for sp in service_principals))
+        results = await asyncio.gather(
+            *(collect_one(sp, resolved_at) for sp, resolved_at in resolved)
+        )
         records = [record for record in results if record is not None]
         return records, run_errors
 
     async def _collect_for_service_principal(
-        self, sp: ServicePrincipal
+        self, sp: ServicePrincipal, resolved_at: datetime
     ) -> ServicePrincipalRecord:
-        """Build a record for an SP: Application, memberships, roles."""
+        """Build a record for an SP: Application, memberships, roles.
+
+        Each section of the record is stamped into `retrievedAt` when the call
+        that produced it returns; a section whose call failed (SP Gap) is left
+        unstamped, so absence in `retrievedAt` means "not observed this run".
+        """
         _log.info("resolving service principal '%s'", sp.display_name)
         record = sp_record_from_graph(sp, None)
+        # Identity, tags, and SP-owned credentials all came from the resolution
+        # (or tag-selection) response, so they carry that fetch's timestamp.
+        record["retrievedAt"]["servicePrincipal"] = resolved_at.isoformat()
         now = datetime.now(UTC)
         record["credentials"] = map_credentials(
             "servicePrincipal", sp.password_credentials, sp.key_credentials, now
@@ -527,7 +550,11 @@ class EntraCollector:
 
         async def application_and_owners() -> None:
             app_object_id: str | None = None
-            if sp.app_id:
+            if not sp.app_id:
+                # No appId means no Application can exist; that fact was
+                # observed on the SP object itself at resolution time.
+                record["retrievedAt"]["application"] = resolved_at.isoformat()
+            else:
                 try:
                     application = await self._resolve_application(sp.app_id)
                 except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
@@ -536,6 +563,10 @@ class EntraCollector:
                         f"Failed to resolve application: {describe_graph_error(exc)}",
                     )
                 else:
+                    # The lookup itself succeeded, so the section counts as
+                    # observed even when no Application exists (that absence
+                    # is still recorded as an SP Gap below).
+                    record["retrievedAt"]["application"] = _iso_now()
                     if application is not None:
                         record["application"] = application_record_from_graph(
                             application
@@ -559,6 +590,7 @@ class EntraCollector:
                 record["owners"] = await self.collect_owners(
                     record["objectId"], app_object_id
                 )
+                record["retrievedAt"]["owners"] = _iso_now()
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
                 _sp_gap(
                     record, f"Failed to collect owners: {describe_graph_error(exc)}"
@@ -569,6 +601,7 @@ class EntraCollector:
                 record["groupMemberships"] = await self.collect_group_memberships(
                     record["objectId"]
                 )
+                record["retrievedAt"]["groupMemberships"] = _iso_now()
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
                 _sp_gap(
                     record,
@@ -579,6 +612,7 @@ class EntraCollector:
                 record["groupMemberships"] = apply_pim_membership(
                     record["groupMemberships"], active
                 )
+                record["retrievedAt"]["pimForGroups"] = _iso_now()
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
                 _sp_gap(
                     record,
@@ -589,6 +623,7 @@ class EntraCollector:
                 record["directoryRoles"] = await self.collect_directory_roles(
                     record["objectId"], record["groupMemberships"]
                 )
+                record["retrievedAt"]["directoryRoles"] = _iso_now()
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
                 _sp_gap(
                     record,
@@ -602,6 +637,9 @@ class EntraCollector:
                 )
                 record["applicationPermissions"] = app_perms
                 record["delegatedPermissions"] = delegated_perms
+                retrieved = _iso_now()
+                record["retrievedAt"]["applicationPermissions"] = retrieved
+                record["retrievedAt"]["delegatedPermissions"] = retrieved
             except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap
                 _sp_gap(
                     record,

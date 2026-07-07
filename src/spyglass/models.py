@@ -93,6 +93,29 @@ class OwnerRecord(TypedDict):
     displayName: str | None
 
 
+class SectionRetrievals(TypedDict, total=False):
+    """Per-section retrieval timestamps (ISO 8601 UTC) for one Service Principal.
+
+    Each key is stamped when the call that produced that section returned. A
+    missing key means the section was *not observed* this run (its call failed
+    as an SP Gap or never ran) — consumers must treat absence as "unknown", not
+    as "empty". `servicePrincipal` covers the identity fields, tags, and the
+    SP-owned credentials; `application` covers the attached Application object
+    and the Application-owned credentials; `pimForGroups` covers the
+    `pimMembership` annotation on group memberships.
+    """
+
+    servicePrincipal: str
+    application: str
+    owners: str
+    groupMemberships: str
+    pimForGroups: str
+    directoryRoles: str
+    applicationPermissions: str
+    delegatedPermissions: str
+    azureRoleAssignments: str
+
+
 class ServicePrincipalRecord(TypedDict):
     """A single audited Service Principal: identity, tags, attached Application."""
 
@@ -109,6 +132,7 @@ class ServicePrincipalRecord(TypedDict):
     delegatedPermissions: list[DelegatedPermissionRecord]
     owners: list[OwnerRecord]
     errors: list[str]
+    retrievedAt: SectionRetrievals
 
 
 class Selection(TypedDict):

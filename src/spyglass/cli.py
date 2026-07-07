@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import json
 import logging
+import sqlite3
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,11 +36,13 @@ from .models import Selection, ServicePrincipalRecord
 from .render import render
 from .report import build_report
 from .selection_parse import merge_object_ids, parse_ids_file
+from .store import StoreError, persist_report
 
 DEFAULT_OUTPUT = "audit-report.json"
 
 _log = logging.getLogger("spyglass.cli")
 _render_log = logging.getLogger("spyglass.render")
+_store_log = logging.getLogger("spyglass.store")
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -96,6 +99,16 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help=(
             "Path for the HTML report (implies --html). Defaults to the JSON "
             "output path with an .html suffix."
+        ),
+    )
+    parser.add_argument(
+        "--db",
+        metavar="PATH",
+        help=(
+            "Path to a SQLite run store. When given, the run is additionally "
+            "persisted there as an append-only snapshot (the file and schema "
+            "are created on first use), enabling change tracking across runs. "
+            "JSON output is unaffected."
         ),
     )
     parser.add_argument(
@@ -234,10 +247,13 @@ async def _run(args: argparse.Namespace) -> int:
         run_errors.append(f"Azure RBAC query failed: {exc}")
         _log.warning("Azure RBAC query failed: %s", exc)
     else:
+        # One batch answered for every SP, so they share one retrieval stamp.
+        rbac_retrieved_at = datetime.now(UTC).isoformat()
         for record in records:
             record["azureRoleAssignments"] = assignments_by_principal.get(
                 record["objectId"], []
             )
+            record["retrievedAt"]["azureRoleAssignments"] = rbac_retrieved_at
 
     report = build_report(
         records,
@@ -262,6 +278,17 @@ async def _run(args: argparse.Namespace) -> int:
         html_path = args.html_output or str(Path(output).with_suffix(".html"))
         Path(html_path).write_text(render(report), encoding="utf-8")
         _render_log.info("wrote HTML report to %s", html_path)
+
+    # Optional run-store persistence. The JSON already written stays valid
+    # either way; a failed persist is reported with a non-zero exit so it is
+    # never silently skipped.
+    if args.db:
+        try:
+            run_id = persist_report(args.db, report)
+        except (sqlite3.Error, StoreError, OSError) as exc:
+            _store_log.error("failed to persist run to %s: %s", args.db, exc)
+            return 1
+        _store_log.info("persisted run %d to %s", run_id, args.db)
 
     return 0
 

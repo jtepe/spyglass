@@ -39,6 +39,7 @@ def _report(*, sp: dict[str, Any] | None = None) -> AuditReport:
         "delegatedPermissions": [],
         "owners": [],
         "errors": [],
+        "retrievedAt": {},
     }
     if sp:
         sp_record.update(sp)
