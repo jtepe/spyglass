@@ -98,3 +98,17 @@ it). Flattened across both owned objects into one `owners[]` array, each entry
 tagged with `owner` (`application`/`servicePrincipal` — which object is owned)
 and `ownerType` (`user`/`servicePrincipal`/`group`). An SP-owns-SP entry is a
 privilege chain, not noise.
+
+**retrievedAt**:
+Per-section retrieval timestamps on each Service Principal record: each key is
+stamped (ISO 8601 UTC) when the call that produced that section returned. A
+missing key means the section was *not observed* that run (its call failed as
+an SP Gap) — absence of data, never absence of privilege.
+_Avoid_: fetchedAt, timestamp (unqualified)
+
+**Run Store**:
+The optional SQLite database (`--db`) that persists each run as an append-only
+normalized snapshot for change tracking over time. Every fact row carries its
+section's `retrievedAt`; the `sp_sections` table records which sections were
+observed per SP per run, so a differ can tell "removed" from "not observed".
+_Avoid_: history database, cache

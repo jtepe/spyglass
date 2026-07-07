@@ -24,6 +24,7 @@ def _record(display_name: str | None, object_id: str = "oid") -> ServicePrincipa
         "delegatedPermissions": [],
         "owners": [],
         "errors": [],
+        "retrievedAt": {},
     }
 
 
