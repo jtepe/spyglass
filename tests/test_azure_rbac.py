@@ -5,12 +5,19 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from spyglass.azure_rbac import collect_azure_role_assignments
 
 
 def test_empty_selection_makes_no_subprocess_call() -> None:
     # No object ids => nothing to query; must not shell out to `az`.
-    assert collect_azure_role_assignments([]) == {}
+    assert collect_azure_role_assignments([], "tenant-1") == {}
+
+
+def test_missing_tenant_id_raises() -> None:
+    with pytest.raises(ValueError):
+        collect_azure_role_assignments(["sp-1"], "")
 
 
 def test_run_arg_query_follows_skip_token_across_pages(monkeypatch) -> None:
@@ -31,7 +38,7 @@ def test_run_arg_query_follows_skip_token_across_pages(monkeypatch) -> None:
 
     monkeypatch.setattr(azure_rbac.subprocess, "run", fake_run)
 
-    rows = azure_rbac._run_arg_query("Resources", "test")
+    rows = azure_rbac._run_arg_query("Resources", "test", "tenant-1")
 
     assert rows == [{"id": "a"}, {"id": "b"}]
     # Page one carries no token; page two passes the token from page one.
@@ -57,8 +64,6 @@ def test_unresolved_role_guid_is_backfilled_from_arm(monkeypatch) -> None:
     }
 
     def fake_run(command, **kwargs):
-        if command[:3] == ["az", "account", "show"]:
-            return SimpleNamespace(stdout="tenant-1\n", returncode=0)
         # The ARG batch: assignments resolve, but the role-definition query
         # returns nothing — exactly the gap that leaves a bare GUID behind.
         if "graph" in command:
@@ -85,7 +90,7 @@ def test_unresolved_role_guid_is_backfilled_from_arm(monkeypatch) -> None:
 
     monkeypatch.setattr(azure_rbac.subprocess, "run", fake_run)
 
-    result = azure_rbac.collect_azure_role_assignments(["sp-1"])
+    result = azure_rbac.collect_azure_role_assignments(["sp-1"], "tenant-1")
 
     assert result["sp-1"][0]["roleName"] == "Storage File Data SMB Share Reader"
 
@@ -96,7 +101,7 @@ def test_arm_backfill_failure_keeps_guid_fallback(monkeypatch) -> None:
     monkeypatch.setattr(
         azure_rbac,
         "_run_arg_query",
-        lambda query, label: (
+        lambda query, label, management_group: (
             [
                 {
                     "principalId": "sp-1",
@@ -118,7 +123,7 @@ def test_arm_backfill_failure_keeps_guid_fallback(monkeypatch) -> None:
 
     monkeypatch.setattr(azure_rbac.subprocess, "run", failing_arm)
 
-    result = azure_rbac.collect_azure_role_assignments(["sp-1"])
+    result = azure_rbac.collect_azure_role_assignments(["sp-1"], "tenant-1")
 
     # ARM unavailable => the bare GUID remains, never an exception.
     assert result["sp-1"][0]["roleName"] == STORAGE_READER_GUID
@@ -131,43 +136,15 @@ def test_arg_queries_are_scoped_to_tenant_root_management_group(monkeypatch) -> 
 
     def fake_run(command, **kwargs):
         calls.append(command)
-        if command[:3] == ["az", "account", "show"]:
-            return SimpleNamespace(stdout="tenant-1\n", returncode=0)
         if "graph" in command:
             return SimpleNamespace(stdout=json.dumps({"data": []}), returncode=0)
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr(azure_rbac.subprocess, "run", fake_run)
 
-    azure_rbac.collect_azure_role_assignments(["sp-1"])
+    azure_rbac.collect_azure_role_assignments(["sp-1"], "tenant-1")
 
     graph_calls = [c for c in calls if "graph" in c]
     assert len(graph_calls) == 3
     for command in graph_calls:
         assert command[command.index("--management-groups") + 1] == "tenant-1"
-
-
-def test_rejected_tenant_scope_falls_back_to_subscription_scope(monkeypatch) -> None:
-    import subprocess
-
-    from spyglass import azure_rbac
-
-    calls: list[list[str]] = []
-
-    def fake_run(command, **kwargs):
-        calls.append(command)
-        if command[:3] == ["az", "account", "show"]:
-            return SimpleNamespace(stdout="tenant-1\n", returncode=0)
-        if "graph" in command:
-            if "--management-groups" in command:
-                raise subprocess.CalledProcessError(1, command, stderr="denied")
-            return SimpleNamespace(stdout=json.dumps({"data": []}), returncode=0)
-        raise AssertionError(f"unexpected command: {command}")
-
-    monkeypatch.setattr(azure_rbac.subprocess, "run", fake_run)
-
-    result = azure_rbac.collect_azure_role_assignments(["sp-1"])
-
-    assert result == {}
-    unscoped = [c for c in calls if "graph" in c and "--management-groups" not in c]
-    assert len(unscoped) == 3

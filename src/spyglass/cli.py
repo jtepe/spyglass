@@ -228,7 +228,7 @@ async def _run(args: argparse.Namespace) -> int:
     # failure here is a Run Error — the Entra-plane data still writes.
     try:
         assignments_by_principal = await collect_azure_rbac(
-            [r["objectId"] for r in records]
+            [r["objectId"] for r in records], tenant_id
         )
     except Exception as exc:  # noqa: BLE001 - degrade to a Run Error, never abort
         run_errors.append(f"Azure RBAC query failed: {exc}")
