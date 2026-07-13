@@ -1,10 +1,17 @@
 """Azure RBAC (resource-plane) collector.
 
 Lifts the working synchronous `az graph query` Azure Resource Graph (ARG)
-collector. The query always covers all management groups (no scoping flag).
-Row-level logic — scope classification and role-name resolution, including both
-bug fixes — lives in the pure `arg_transform` module; this module only runs the
-bounded ARG batch and hands the raw rows over.
+collector. Without a scoping flag, `az graph query` runs at subscription scope
+and never returns management-group-scoped rows, so the queries are scoped to
+the tenant root management group (whose id equals the tenant id) via
+`--management-groups`; that covers every management group and every
+subscription beneath it. If the tenant id cannot be resolved or the scoped
+query is rejected (e.g. no read access on the root management group), the
+collector falls back to the unscoped subscription-level query so
+subscription/resource assignments still surface. Row-level logic — scope
+classification and role-name resolution, including both bug fixes — lives in
+the pure `arg_transform` module; this module only runs the bounded ARG batch
+and hands the raw rows over.
 """
 
 from __future__ import annotations
@@ -41,6 +48,7 @@ authorizationresources
 | where principalId in~ ({principals})
 | order by id asc
 | project
+    id,
     principalId,
     roleDefinitionId = tostring(properties.roleDefinitionId),
     scope = tostring(properties.scope),
@@ -66,13 +74,22 @@ resourcecontainers
 """
 
 
-def _run_arg_query(query: str, label: str) -> list[dict]:
-    """Run one ARG query via `az graph query`, paging until exhausted."""
+def _run_arg_query(
+    query: str, label: str, management_group: str | None = None
+) -> list[dict]:
+    """Run one ARG query via `az graph query`, paging until exhausted.
+
+    With `management_group` set, the query runs at management-group scope
+    (`--management-groups`); otherwise it runs at the default subscription
+    scope, which excludes management-group-scoped rows.
+    """
     rows: list[dict] = []
     skip_token: str | None = None
     page_number = 1
     while True:
         command = ["az", "graph", "query", "-q", query, "--first", str(_PAGE)]
+        if management_group:
+            command += ["--management-groups", management_group]
         if skip_token:
             command += ["--skip-token", skip_token]
         command += ["-o", "json"]
@@ -89,6 +106,45 @@ def _run_arg_query(query: str, label: str) -> list[dict]:
         if not skip_token:
             break
     return rows
+
+
+def _resolve_tenant_id() -> str | None:
+    """Resolve the signed-in tenant id, which names the root management group.
+
+    Best-effort: any failure returns `None`, dropping the collector back to
+    the unscoped subscription-level query rather than aborting the run.
+    """
+    try:
+        completed = subprocess.run(
+            ["az", "account", "show", "--query", "tenantId", "-o", "tsv"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (subprocess.CalledProcessError, OSError) as exc:
+        _log.warning("tenant id resolution failed: %s", exc)
+        return None
+    return completed.stdout.strip() or None
+
+
+def _run_tenant_wide_query(query: str, label: str, tenant_id: str | None) -> list[dict]:
+    """Run an ARG query scoped to the tenant root management group.
+
+    Falls back to the unscoped subscription-level query when no tenant id is
+    available or the scoped query is rejected (e.g. the caller has no read
+    access on the root management group).
+    """
+    if tenant_id:
+        try:
+            return _run_arg_query(query, label, management_group=tenant_id)
+        except subprocess.CalledProcessError as exc:
+            _log.warning(
+                "tenant-scoped ARG query (%s) failed, falling back to "
+                "subscription scope: %s",
+                label,
+                exc,
+            )
+    return _run_arg_query(query, label)
 
 
 def _resolve_role_names_via_arm(guids: set[str]) -> dict[str, str]:
@@ -137,20 +193,26 @@ def collect_azure_role_assignments(
     """Collect Azure Role Assignments for `object_ids`, keyed by principal id.
 
     Runs the bounded ARG batch (assignments + role definitions + subscriptions)
-    and delegates all row-level logic to `transform_assignments`. Any role name
-    the ARG join could not resolve (left as a bare GUID) is backfilled from ARM
-    via `az role definition list`, so built-in roles still surface a friendly
-    name.
+    scoped to the tenant root management group, so management-group-scoped
+    assignments are included, and delegates all row-level logic to
+    `transform_assignments`. Any role name the ARG join could not resolve (left
+    as a bare GUID) is backfilled from ARM via `az role definition list`, so
+    built-in roles still surface a friendly name.
     """
     if not object_ids:
         return {}
     quoted = ("'" + oid.replace("'", "''") + "'" for oid in object_ids)
     principals = ", ".join(quoted)
-    assignment_rows = _run_arg_query(
-        _ASSIGNMENTS_QUERY.format(principals=principals), "role assignments"
+    tenant_id = _resolve_tenant_id()
+    assignment_rows = _run_tenant_wide_query(
+        _ASSIGNMENTS_QUERY.format(principals=principals), "role assignments", tenant_id
     )
-    role_definition_rows = _run_arg_query(_ROLE_DEFINITIONS_QUERY, "role definitions")
-    subscription_rows = _run_arg_query(_SUBSCRIPTIONS_QUERY, "subscriptions")
+    role_definition_rows = _run_tenant_wide_query(
+        _ROLE_DEFINITIONS_QUERY, "role definitions", tenant_id
+    )
+    subscription_rows = _run_tenant_wide_query(
+        _SUBSCRIPTIONS_QUERY, "subscriptions", tenant_id
+    )
     by_principal = transform_assignments(
         assignment_rows, role_definition_rows, subscription_rows
     )

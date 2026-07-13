@@ -121,6 +121,27 @@ def test_deleted_role_falls_back_to_guid() -> None:
     )
 
 
+def test_duplicate_assignment_rows_deduplicate_by_id() -> None:
+    scope = "/providers/Microsoft.Management/managementGroups/contoso-root"
+    row = {
+        "id": (
+            f"{scope}/providers/Microsoft.Authorization/"
+            "roleAssignments/11111111-1111-1111-1111-111111111111"
+        ),
+        "principalId": "sp-1",
+        "roleDefinitionId": (
+            f"/providers/Microsoft.Authorization/roleDefinitions/{CONTRIBUTOR_GUID}"
+        ),
+        "scope": scope,
+        "subscriptionId": "",
+    }
+    assignment_rows = [row, dict(row, subscriptionId="s")]
+
+    by_principal = transform_assignments(assignment_rows, [], [])
+
+    assert len(by_principal["sp-1"]) == 1
+
+
 def test_management_group_assignment_carries_parsed_id_and_no_subscription() -> None:
     scope = "/providers/Microsoft.Management/managementGroups/contoso-root"
     assignment_rows = [
