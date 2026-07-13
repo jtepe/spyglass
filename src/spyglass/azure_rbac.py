@@ -3,9 +3,9 @@
 Lifts the working synchronous `az graph query` Azure Resource Graph (ARG)
 collector. Without a scoping flag, `az graph query` runs at subscription scope
 and never returns management-group-scoped rows, so every query is scoped to
-the tenant root management group (whose id equals the tenant id, resolved
-upstream by `auth.verify_preconditions`) via `--management-groups`; that
-covers every management group and every subscription beneath it. Row-level
+the tenant root management group (whose id equals the tenant id) via
+`--management-groups`; that covers every management group and every
+subscription beneath it. Row-level
 logic — scope classification and role-name resolution — lives in the pure
 `arg_transform` module; this module only runs the bounded ARG batch and hands
 the raw rows over.
@@ -72,11 +72,7 @@ resourcecontainers
 
 
 def _run_arg_query(query: str, label: str, management_group: str) -> list[dict]:
-    """Run one ARG query via `az graph query`, paging until exhausted.
-
-    The query runs at management-group scope (`--management-groups`); the
-    default subscription scope would exclude management-group-scoped rows.
-    """
+    """Run one ARG query via `az graph query`, paging until exhausted."""
     rows: list[dict] = []
     skip_token: str | None = None
     page_number = 1
