@@ -40,8 +40,10 @@ def transform_assignments(
     """Transform raw ARG rows into per-principal Azure Role Assignments.
 
     `assignment_rows` carry `principalId`, `roleDefinitionId`, `scope`, and
-    `subscriptionId`. `role_definition_rows` carry the role definition `id` and
-    `roleName`. `subscription_rows` carry `subscriptionId` and `subscriptionName`.
+    `subscriptionId`, plus an optional `id` used to de-duplicate rows a
+    management-group-scoped ARG query can return once per subscription context.
+    `role_definition_rows` carry the role definition `id` and `roleName`.
+    `subscription_rows` carry `subscriptionId` and `subscriptionName`.
     """
     role_names: dict[str, str] = {}
     for row in role_definition_rows:
@@ -54,7 +56,13 @@ def transform_assignments(
     }
 
     by_principal: dict[str, list[AzureRoleAssignment]] = {}
+    seen_assignment_ids: set[str] = set()
     for row in assignment_rows:
+        assignment_id = row.get("id")
+        if assignment_id:
+            if assignment_id in seen_assignment_ids:
+                continue
+            seen_assignment_ids.add(assignment_id)
         guid = _trailing_guid(row["roleDefinitionId"])
         scope_type, mg_id = classify_scope(row["scope"])
         subscription_id = None if mg_id is not None else row.get("subscriptionId")
