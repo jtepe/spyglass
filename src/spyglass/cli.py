@@ -247,7 +247,6 @@ async def _run(args: argparse.Namespace) -> int:
         run_errors.append(f"Azure RBAC query failed: {exc}")
         _log.warning("Azure RBAC query failed: %s", exc)
     else:
-        # One batch answered for every SP, so they share one retrieval stamp.
         rbac_retrieved_at = datetime.now(UTC).isoformat()
         for record in records:
             record["azureRoleAssignments"] = assignments_by_principal.get(
@@ -279,9 +278,6 @@ async def _run(args: argparse.Namespace) -> int:
         Path(html_path).write_text(render(report), encoding="utf-8")
         _render_log.info("wrote HTML report to %s", html_path)
 
-    # Optional run-store persistence. The JSON already written stays valid
-    # either way; a failed persist is reported with a non-zero exit so it is
-    # never silently skipped.
     if args.db:
         try:
             run_id = persist_report(args.db, report)

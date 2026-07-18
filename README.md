@@ -95,33 +95,17 @@ clear).
 
 ### Persisting runs (`--db`)
 
-Every run is a snapshot of a moment in time. Point `--db` at a SQLite file to
-additionally persist that snapshot into a local **Run Store**, so changes can
-be tracked across runs:
+Point `--db` at a SQLite file to additionally persist the run into a local
+**Run Store** — one append-only snapshot per run, so changes can be tracked
+over time. The file and its schema are created on first use; JSON (and HTML)
+output is unchanged.
 
 ```bash
 uv run spyglass --tag terraform-iac --output audit-report.json --db spyglass.db
 ```
 
-The file and its schema are created on first use, and runs are **append-only**
-— a new run never rewrites an earlier one. JSON (and HTML) output is unchanged;
-the store is in addition to it. If persisting fails, the JSON has already been
-written and the run exits non-zero so the miss is never silent.
-
-Inside the store each run is one `runs` row plus normalized per-section tables
-(`credentials`, `directory_roles`, `azure_role_assignments`, ...), every fact
-row stamped with the `retrievedAt` of the call that produced it. The
-`sp_sections` table records which sections were actually observed for each SP
-in each run: a section absent there failed as an SP Gap that run, so its facts
-are *unknown* for that run — not removed. Query history with plain SQL, e.g.
-"when did this credential first appear":
-
-```sql
-SELECT MIN(c.retrieved_at)
-FROM credentials c
-JOIN service_principals sp ON sp.id = c.sp_id
-WHERE sp.object_id = '2222...' AND c.key_id = 'abcd...';
-```
+See [The Run Store](docs/run-store.md) for the schema, its timestamp
+semantics, and how to query history.
 
 ### Other flags
 
@@ -253,6 +237,9 @@ Longer-form references live under [`docs/`](docs/):
   possible for one.
 - [Required permissions, in detail](docs/permissions.md) — the least-privileged
   permission set per plane, derived call-by-call from what the tool queries.
+- [The Run Store](docs/run-store.md) — the SQLite database behind `--db`: the
+  per-run snapshot schema, its timestamp semantics, and how to query change
+  history with plain SQL.
 
 ## Development
 
