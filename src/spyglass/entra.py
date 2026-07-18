@@ -423,7 +423,6 @@ class EntraCollector:
             message = f"Failed to select by tag '{tag}': {exc}"
             _log.warning(message)
             return [], [message]
-        # One selection query resolved every SP, so they share one timestamp.
         selected_at = datetime.now(UTC)
         return await self._collect_all([(sp, selected_at) for sp in service_principals])
 
@@ -540,8 +539,6 @@ class EntraCollector:
         """
         _log.info("resolving service principal '%s'", sp.display_name)
         record = sp_record_from_graph(sp, None)
-        # Identity, tags, and SP-owned credentials all came from the resolution
-        # (or tag-selection) response, so they carry that fetch's timestamp.
         record["retrievedAt"]["servicePrincipal"] = resolved_at.isoformat()
         now = datetime.now(UTC)
         record["credentials"] = map_credentials(
@@ -550,11 +547,7 @@ class EntraCollector:
 
         async def application_and_owners() -> None:
             app_object_id: str | None = None
-            if not sp.app_id:
-                # No appId means no Application can exist; that fact was
-                # observed on the SP object itself at resolution time.
-                record["retrievedAt"]["application"] = resolved_at.isoformat()
-            else:
+            if sp.app_id:
                 try:
                     application = await self._resolve_application(sp.app_id)
                 except Exception as exc:  # noqa: BLE001 - degrade to an SP Gap

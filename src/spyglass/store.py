@@ -8,10 +8,11 @@ appended — history is the set of snapshots, and change tracking is a query
 over them.
 
 Timestamps: every fact row carries the `retrieved_at` of the call that
-produced it (falling back to the run's `generated_at` for reports predating
-per-section stamps). The `sp_sections` table records which sections were
-actually observed in a run — a section absent there was a gap or never ran,
-so its facts being absent must not be read as "removed".
+produced it. Audit Reports written by spyglass versions without per-section
+`retrievedAt` stamps carry no such timestamps, so their fact rows are stamped
+with the run's `generated_at` instead. The `sp_sections` table records which
+sections were actually observed in a run — a section absent there was a gap
+or never ran, so its facts being absent must not be read as "removed".
 
 The schema is versioned via `PRAGMA user_version`; a database written by a
 newer schema is refused rather than misread.
