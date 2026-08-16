@@ -20,7 +20,7 @@ FROM python:3.14-slim-trixie
 RUN apt-get update \
     && apt-get install --no-install-recommends --yes ca-certificates curl gnupg \
     && curl --fail --silent --show-error --location \
-        --output /tmp/microsoft.asc https://packages.microsoft.com/keys/microsoft.asc \
+        --output /tmp/microsoft.asc https://packages.microsoft.com/keys/microsoft-2025.asc \
     && gpg --batch --dearmor --output /usr/share/keyrings/microsoft-prod.gpg \
         /tmp/microsoft.asc \
     && rm /tmp/microsoft.asc \
