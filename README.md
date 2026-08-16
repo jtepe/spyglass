@@ -36,8 +36,8 @@ uv run spyglass --help
 
 ## Usage
 
-`spyglass` always writes a JSON Audit Report. You choose the set of Service
-Principals to audit with exactly one selection method.
+The `spyglass audit` subcommand always writes a JSON Audit Report. You choose
+the set of Service Principals to audit with exactly one selection method.
 
 ### Select by object id
 
@@ -45,7 +45,7 @@ Pass one or more Service Principal `objectId`s (an `appId` is accepted as a
 fallback and resolved to its Service Principal). The flag repeats:
 
 ```bash
-uv run spyglass \
+uv run spyglass audit \
   --object-id 22222222-2222-2222-2222-222222222222 \
   --object-id 99999999-9999-9999-9999-999999999999 \
   --output audit-report.json
@@ -57,7 +57,7 @@ Point `--ids-file` at a file of object ids — either a newline-separated list o
 a JSON array. Values are merged and de-duplicated with any `--object-id` flags:
 
 ```bash
-uv run spyglass --ids-file ./sp-ids.txt --output audit-report.json
+uv run spyglass audit --ids-file ./sp-ids.txt --output audit-report.json
 ```
 
 ### Select by tag
@@ -66,7 +66,7 @@ Audit every Service Principal carrying a given Entra tag. This is mutually
 exclusive with `--object-id` / `--ids-file`:
 
 ```bash
-uv run spyglass --tag terraform-iac --output audit-report.json
+uv run spyglass audit --tag terraform-iac --output audit-report.json
 ```
 
 ### Rendering HTML
@@ -78,10 +78,10 @@ path (and implies `--html`); by default the HTML path is the JSON path with an
 `.html` suffix.
 
 ```bash
-uv run spyglass --tag terraform-iac --html
+uv run spyglass audit --tag terraform-iac --html
 # writes audit-report.json and audit-report.html
 
-uv run spyglass --tag terraform-iac --html-output report.html
+uv run spyglass audit --tag terraform-iac --html-output report.html
 ```
 
 The HTML view is **security-focused**: it foregrounds Directory Roles,
@@ -101,7 +101,7 @@ over time. The file and its schema are created on first use; JSON (and HTML)
 output is unchanged.
 
 ```bash
-uv run spyglass --tag terraform-iac --output audit-report.json --db spyglass.db
+uv run spyglass audit --tag terraform-iac --output audit-report.json --db spyglass.db
 ```
 
 See [The Run Store](docs/run-store.md) for the schema, its timestamp
@@ -187,10 +187,10 @@ The **Microsoft Graph (directory) plane** selects its credential by precedence:
 ```bash
 # Service principal for the Graph plane (RBAC plane still uses az login):
 export AZURE_CLIENT_SECRET='...'
-spyglass --client-id <app-id> --tenant-id <tenant-id> --object-id <sp-object-id>
+spyglass audit --client-id <app-id> --tenant-id <tenant-id> --object-id <sp-object-id>
 
 # Managed identity for the Graph plane:
-spyglass --managed-identity --object-id <sp-object-id>
+spyglass audit --managed-identity --object-id <sp-object-id>
 ```
 
 ## Required permissions

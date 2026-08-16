@@ -46,8 +46,14 @@ _store_log = logging.getLogger("spyglass.store")
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    root_parser = argparse.ArgumentParser(
         prog="spyglass",
+        description="Inspect Microsoft Entra service principals.",
+    )
+    subparsers = root_parser.add_subparsers(dest="command", required=True)
+    parser = subparsers.add_parser(
+        "audit",
+        help="Audit service principals and write a JSON Audit Report.",
         description=(
             "Audit Entra service principals across the directory plane and "
             "write a JSON Audit Report."
@@ -164,7 +170,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "or user-assigned when --client-id is given)."
         ),
     )
-    args = parser.parse_args(argv)
+    args = root_parser.parse_args(argv)
 
     if args.tag is not None and (args.object_ids or args.ids_file):
         parser.error("--tag is mutually exclusive with --object-id/--ids-file")
