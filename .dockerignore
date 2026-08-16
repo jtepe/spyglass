@@ -1,0 +1,16 @@
+.git
+.venv
+.pytest_cache
+.ruff_cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+wheels/
+tests/
+docs/
+assets/
+example-audit.html
+example-audit.json
+render_html.py
