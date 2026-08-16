@@ -36,21 +36,6 @@ uv run spyglass --help
 
 ## OCI image
 
-[`Containerfile`](Containerfile) builds the supported OCI image. It contains
-only the locked production Python environment and the Azure CLI required for the
-Azure RBAC plane. The final Debian 13 slim stage has no build tools or development
-dependencies and runs as an unprivileged user (UID/GID `65532`).
-
-Build it with any OCI-compatible builder:
-
-```bash
-docker build --file Containerfile --tag spyglass:local .
-```
-
-Azure CLI authentication is persisted in a host directory and Audit Reports are
-written to a separate mounted directory. Use your host UID for those mounts so
-neither directory needs to be made world-writable:
-
 ```bash
 mkdir -p .azure output
 
@@ -66,11 +51,6 @@ docker run --rm \
   --volume "$PWD/output:/work" \
   spyglass:local audit --object-id <object-id> --output audit-report.json
 ```
-
-The image defaults to `spyglass --help`; append normal Spyglass arguments after
-the image name. Keep the Azure CLI token mount private. For service-principal
-Graph authentication, pass the usual Azure environment variables at runtime
-(for example, `--env AZURE_CLIENT_SECRET`), never bake them into an image.
 
 ## Usage
 

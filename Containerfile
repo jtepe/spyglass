@@ -17,9 +17,6 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.14-slim-trixie
 
-# Spyglass uses `az graph query` for the Azure RBAC plane. Install the Azure CLI
-# from Microsoft's signed Debian repository, then discard tools only needed to
-# add that repository and all APT indexes.
 RUN apt-get update \
     && apt-get install --no-install-recommends --yes ca-certificates curl gnupg \
     && curl --fail --silent --show-error --location \
@@ -36,8 +33,6 @@ RUN apt-get update \
 
 COPY --from=builder /app/.venv /opt/spyglass/venv
 
-# Run the CLI without root. The home directory holds Azure CLI tokens; /work is
-# the writable location for Audit Reports and can be mounted by the caller.
 RUN groupadd --gid 65532 spyglass \
     && useradd --uid 65532 --gid spyglass --create-home --home-dir /home/spyglass \
         --shell /usr/sbin/nologin spyglass \
