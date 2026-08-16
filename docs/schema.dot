@@ -7,7 +7,7 @@ digraph run_store_schema {
         rankdir=LR
         nodesep=0.45
         ranksep=1.1
-        splines=ortho
+        splines=polyline
     ];
     node [shape=plain fontname="Helvetica"];
     edge [color="#64748b" arrowsize=0.8 fontname="Helvetica" fontsize=10];
@@ -162,16 +162,16 @@ digraph run_store_schema {
         </TABLE>
     >];
 
-    runs:id:e -> run_errors:run_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
-    runs:id:e -> service_principals:run_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
+    runs -> run_errors [dir=both arrowtail=tee arrowhead="crowodot"];
+    runs -> service_principals [dir=both arrowtail=tee arrowhead="crowodot"];
 
-    service_principals:id:e -> sp_sections:sp_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
-    service_principals:id:e -> sp_errors:sp_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
-    service_principals:id:e -> azure_role_assignments:sp_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
-    service_principals:id:e -> group_memberships:sp_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
-    service_principals:id:e -> directory_roles:sp_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
-    service_principals:id:e -> credentials:sp_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
-    service_principals:id:e -> application_permissions:sp_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
-    service_principals:id:e -> delegated_permissions:sp_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
-    service_principals:id:e -> owners:sp_id:w [dir=both arrowtail=tee arrowhead="crowodot"];
+    service_principals -> sp_sections [dir=both arrowtail=tee arrowhead="crowodot"];
+    service_principals -> sp_errors [dir=both arrowtail=tee arrowhead="crowodot"];
+    service_principals -> azure_role_assignments [dir=both arrowtail=tee arrowhead="crowodot"];
+    service_principals -> group_memberships [dir=both arrowtail=tee arrowhead="crowodot"];
+    service_principals -> directory_roles [dir=both arrowtail=tee arrowhead="crowodot"];
+    service_principals -> credentials [dir=both arrowtail=tee arrowhead="crowodot"];
+    service_principals -> application_permissions [dir=both arrowtail=tee arrowhead="crowodot"];
+    service_principals -> delegated_permissions [dir=both arrowtail=tee arrowhead="crowodot"];
+    service_principals -> owners [dir=both arrowtail=tee arrowhead="crowodot"];
 }
